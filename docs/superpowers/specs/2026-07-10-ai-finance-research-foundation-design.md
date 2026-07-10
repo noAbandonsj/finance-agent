@@ -1,7 +1,7 @@
 # AI Finance Research Foundation Design
 
-**Date:** 2026-07-10  
-**Status:** Approved  
+**Date:** 2026-07-10
+**Status:** Approved
 **Audience:** Personal, single-user Windows deployment
 
 ## 1. Purpose
@@ -53,7 +53,7 @@ These capabilities belong to later milestones and must use the boundaries define
 
 ### 4.1 Backend
 
-- Python 3.11.
+- The existing local Python 3.13.7 interpreter (`D:\\Pathon\\python.exe`) through a project `.venv`.
 - FastAPI for local HTTP and Server-Sent Events APIs.
 - LangChain `create_agent` for the initial tool-calling agent loop.
 - `langchain-openai` `ChatOpenAI` configured with the DeepSeek OpenAI-compatible base URL.
@@ -84,6 +84,7 @@ LangChain remains the application-level agent API. LangGraph is its underlying r
 - No Docker or locally installed database server is required.
 - `DEEPSEEK_API_KEY` is loaded from `.env` or the process environment and is never stored in SQLite.
 - Runtime analysis requires a real DeepSeek key and real provider data. Test doubles exist only under test code.
+- If a future XtQuant release does not support Python 3.13, the QMT market gateway runs as a separate local process with its broker-supported interpreter; the main application remains on the existing Python installation.
 
 ## 5. Architecture
 
