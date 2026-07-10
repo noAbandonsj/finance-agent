@@ -54,6 +54,7 @@ These capabilities belong to later milestones and must use the boundaries define
 ### 4.1 Backend
 
 - The existing local Python 3.13.7 interpreter (`D:\\Pathon\\python.exe`) through a project `.venv`.
+- The existing local uv 0.11.2 installation for dependency resolution and `uv.lock`; uv must create the environment from `D:\\Pathon\\python.exe` rather than downloading another interpreter.
 - FastAPI for local HTTP and Server-Sent Events APIs.
 - LangChain `create_agent` for the initial tool-calling agent loop.
 - `langchain-openai` `ChatOpenAI` configured with the DeepSeek OpenAI-compatible base URL.
