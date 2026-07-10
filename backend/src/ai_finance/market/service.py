@@ -14,4 +14,7 @@ class MarketDataService:
         return self.provider.get_market_snapshot(normalize_symbol(symbol))
 
     def get_daily_bars(self, symbol: str, trading_days: int) -> list[DailyBar]:
+        if trading_days <= 0:
+            raise ValueError("trading_days must be greater than zero")
+
         return self.provider.get_daily_bars(normalize_symbol(symbol), trading_days)

@@ -261,6 +261,86 @@ def test_etf_daily_bars_use_etf_history() -> None:
     _assert_history_arguments(client.history_arguments["etf"], raw_code="510300")
 
 
+class WideningHistoryAkshare(FakeAkshare):
+    def __init__(self, *, older_rows_available: bool) -> None:
+        super().__init__()
+        self.older_rows_available = older_rows_available
+        self.stock_history_requests: list[dict[str, Any]] = []
+
+    def stock_zh_a_hist(self, **kwargs: Any) -> pd.DataFrame:
+        self.calls["stock_history"] += 1
+        self.stock_history_requests.append(kwargs)
+        frame = _history_frame()
+        if not self.older_rows_available or self.calls["stock_history"] == 1:
+            return frame.copy()
+        older_rows = pd.DataFrame(
+            [
+                {
+                    "日期": "2025-12-30",
+                    "开盘": "8.0",
+                    "最高": "9.0",
+                    "最低": "7.5",
+                    "收盘": "8.5",
+                    "成交量": "800",
+                    "成交额": "8000",
+                },
+                {
+                    "日期": "2025-12-31",
+                    "开盘": "9.0",
+                    "最高": "10.0",
+                    "最低": "8.5",
+                    "收盘": "9.5",
+                    "成交量": "900",
+                    "成交额": "9000",
+                },
+            ]
+        )
+        return pd.concat([frame, older_rows], ignore_index=True)
+
+
+def test_daily_bars_widen_history_window_until_enough_rows_are_available() -> None:
+    client = WideningHistoryAkshare(older_rows_available=True)
+
+    bars = _provider(client).get_daily_bars("600519", trading_days=4)
+
+    assert [bar.trading_date for bar in bars] == [
+        date(2025, 12, 31),
+        date(2026, 1, 1),
+        date(2026, 1, 2),
+        date(2026, 1, 3),
+    ]
+    assert len(client.stock_history_requests) == 2
+    initial_request, wider_request = client.stock_history_requests
+    assert wider_request["start_date"] < initial_request["start_date"]
+    assert wider_request["end_date"] == initial_request["end_date"]
+
+
+def test_daily_bars_stop_widening_at_earliest_supported_history() -> None:
+    client = WideningHistoryAkshare(older_rows_available=False)
+
+    bars = _provider(client).get_daily_bars("600519", trading_days=10)
+
+    assert [bar.trading_date for bar in bars] == [
+        date(2026, 1, 1),
+        date(2026, 1, 2),
+        date(2026, 1, 3),
+    ]
+    assert client.stock_history_requests[-1]["start_date"] == "19900101"
+    assert len(client.stock_history_requests) <= 10
+
+
+@pytest.mark.parametrize("trading_days", [0, -1])
+def test_daily_bars_reject_non_positive_counts_before_provider_calls(
+    trading_days: int,
+) -> None:
+    client = FakeAkshare()
+
+    with pytest.raises(ValueError, match="trading_days must be greater than zero"):
+        _provider(client).get_daily_bars("600519", trading_days)
+
+    assert client.calls == Counter()
+
+
 def _assert_history_arguments(arguments: dict[str, Any], *, raw_code: str) -> None:
     assert arguments["symbol"] == raw_code
     assert arguments["period"] == "daily"
@@ -297,6 +377,36 @@ class FailingStockSpotAkshare(FakeAkshare):
         if self.failures:
             raise self.failures.pop(0)
         return _stock_spot_frame().copy()
+
+
+class MissingSpotColumnAkshare(FakeAkshare):
+    def __init__(self, missing_column: str | None) -> None:
+        super().__init__()
+        self.missing_column = missing_column
+
+    def stock_zh_a_spot_em(self) -> pd.DataFrame:
+        self.calls["stock_spot"] += 1
+        frame = _stock_spot_frame()
+        if self.missing_column is not None:
+            frame = frame.drop(columns=[self.missing_column])
+        return frame.copy()
+
+
+@pytest.mark.parametrize("missing_column", ["代码", "名称", "最新价"])
+def test_invalid_spot_schema_raises_provider_error_without_caching(
+    missing_column: str,
+) -> None:
+    client = MissingSpotColumnAkshare(missing_column)
+    provider = _provider(client)
+
+    with pytest.raises(ProviderUnavailableError) as error:
+        provider.get_security_profile("600519")
+
+    assert error.value.code == "PROVIDER_UNAVAILABLE"
+    client.missing_column = None
+    assert provider.get_security_profile("600519").symbol == "600519.SH"
+    assert client.calls["stock_spot"] == 2
+    assert client.calls["etf_spot"] == 2
 
 
 def test_provider_retries_a_failed_akshare_call_once() -> None:
@@ -377,3 +487,16 @@ def test_market_service_normalizes_symbols_before_delegating() -> None:
         ("snapshot", "600519.SH"),
         ("bars", "600519.SH", 20),
     ]
+
+
+@pytest.mark.parametrize("trading_days", [0, -20])
+def test_market_service_rejects_non_positive_counts_before_delegating(
+    trading_days: int,
+) -> None:
+    recording_provider = RecordingProvider()
+    service = MarketDataService(recording_provider)
+
+    with pytest.raises(ValueError, match="trading_days must be greater than zero"):
+        service.get_daily_bars("600519", trading_days)
+
+    assert recording_provider.calls == []

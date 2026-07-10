@@ -32,6 +32,8 @@ class _SpotRecord:
 
 
 _T = TypeVar("_T")
+_EARLIEST_HISTORY_DATE = date(1990, 1, 1)
+_REQUIRED_SPOT_COLUMNS = frozenset({"代码", "名称", "最新价"})
 
 
 class AkshareMarketDataProvider:
@@ -103,29 +105,37 @@ class AkshareMarketDataProvider:
             raise ProviderUnavailableError("AKShare returned an invalid market snapshot") from exc
 
     def get_daily_bars(self, symbol: str, trading_days: int) -> list[DailyBar]:
+        if trading_days <= 0:
+            raise ValueError("trading_days must be greater than zero")
+
         canonical_symbol = normalize_symbol(symbol)
         record = self._find_record(canonical_symbol)
         end = self._now().date()
-        calendar_days = max(30, trading_days * 2)
-        arguments = {
-            "symbol": record.raw_code,
-            "period": "daily",
-            "start_date": (end - timedelta(days=calendar_days)).strftime("%Y%m%d"),
-            "end_date": end.strftime("%Y%m%d"),
-            "adjust": "qfq",
-        }
         if record.security_type is SecurityType.ETF:
-            frame = self._call_with_retry(self._client.fund_etf_hist_em, **arguments)
+            history_operation = self._client.fund_etf_hist_em
         else:
-            frame = self._call_with_retry(self._client.stock_zh_a_hist, **arguments)
+            history_operation = self._client.stock_zh_a_hist
 
-        try:
-            bars = [self._daily_bar(canonical_symbol, row) for row in frame.to_dict("records")]
-        except (AttributeError, KeyError, TypeError, ValueError) as exc:
-            raise ProviderUnavailableError("AKShare returned invalid daily history") from exc
+        maximum_calendar_days = (end - _EARLIEST_HISTORY_DATE).days
+        calendar_days = min(maximum_calendar_days, max(30, trading_days * 2))
+        while True:
+            arguments = {
+                "symbol": record.raw_code,
+                "period": "daily",
+                "start_date": (end - timedelta(days=calendar_days)).strftime("%Y%m%d"),
+                "end_date": end.strftime("%Y%m%d"),
+                "adjust": "qfq",
+            }
+            frame = self._call_with_retry(history_operation, **arguments)
+            try:
+                bars = [self._daily_bar(canonical_symbol, row) for row in frame.to_dict("records")]
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                raise ProviderUnavailableError("AKShare returned invalid daily history") from exc
 
-        bars.sort(key=lambda bar: bar.trading_date)
-        return bars[-trading_days:]
+            if len(bars) >= trading_days or calendar_days == maximum_calendar_days:
+                bars.sort(key=lambda bar: bar.trading_date)
+                return bars[-trading_days:]
+            calendar_days = min(maximum_calendar_days, calendar_days * 2)
 
     def _find_record(self, canonical_symbol: str) -> _SpotRecord:
         stock_records, etf_records = self._get_spot_records()
@@ -163,6 +173,11 @@ class AkshareMarketDataProvider:
         frame: pd.DataFrame,
         security_type: SecurityType,
     ) -> dict[str, _SpotRecord]:
+        missing_columns = _REQUIRED_SPOT_COLUMNS.difference(frame.columns)
+        if missing_columns:
+            columns = ", ".join(sorted(missing_columns))
+            raise ValueError(f"AKShare spot table is missing required columns: {columns}")
+
         records: dict[str, _SpotRecord] = {}
         for values in frame.to_dict("records"):
             raw_code = self._code_text(values.get("代码"))
