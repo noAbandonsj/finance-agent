@@ -1,7 +1,7 @@
 # AI Finance Research Foundation Design
 
 **Date:** 2026-07-10  
-**Status:** Draft for user review  
+**Status:** Approved  
 **Audience:** Personal, single-user Windows deployment
 
 ## 1. Purpose
@@ -247,6 +247,12 @@ Alembic manages these Milestone 1 tables:
 - Market view, horizon, confidence, and summary.
 - Supporting evidence, opposing evidence, risks, and invalidation conditions as JSON.
 - Full validated result JSON.
+
+#### `analysis_event`
+
+- Run ID and monotonically increasing sequence number.
+- Event type, user-facing message, optional payload JSON, and creation time.
+- Terminal flag used by the SSE endpoint to stop polling after completion or failure.
 
 #### `watchlist_item`
 
