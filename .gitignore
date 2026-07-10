@@ -1,0 +1,16 @@
+.env
+.venv/
+
+data/*.db
+!data/.gitkeep
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
