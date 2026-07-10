@@ -70,6 +70,7 @@ LangChain remains the application-level agent API. LangGraph is its underlying r
 
 ### 4.2 Frontend
 
+- The existing local Node.js 24.11.1 and npm 11.6.2 installations.
 - Vue 3 with TypeScript and Vite.
 - Composition API with `<script setup>`.
 - Vue Router for application views.
