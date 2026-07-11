@@ -130,3 +130,24 @@ export interface MarketMetrics {
   max_drawdown: number | null
   volume_ratio: number | null
 }
+
+export interface WatchlistItem {
+  symbol: string
+  display_name: string
+  security_type: 'STOCK' | 'ETF'
+  note: string | null
+  created_at: string
+}
+
+export interface ResearchRunSummary {
+  id: string
+  symbol: string
+  status: string
+  model_name: string
+  started_at: string
+  finished_at?: string | null
+  market_view: string | null
+  confidence: number | null
+  horizon: string | null
+  summary: string | null
+}
