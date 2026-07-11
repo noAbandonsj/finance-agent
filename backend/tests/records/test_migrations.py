@@ -2,7 +2,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect, text
+from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, inspect, text
 
 from ai_finance.records.database import Database
 
@@ -109,29 +109,78 @@ def test_initial_migration_has_required_columns_constraints_and_indexes(tmp_path
         for table_name, column_names in expected_columns.items():
             assert {column["name"] for column in inspector.get_columns(table_name)} == column_names
 
-        assert {index["name"] for index in inspector.get_indexes("analysis_run")} == {
-            "ix_analysis_run_status_started_at"
+        columns = {
+            table_name: {column["name"]: column for column in inspector.get_columns(table_name)}
+            for table_name in expected_columns
         }
-        assert {index["name"] for index in inspector.get_indexes("analysis_event")} == {
-            "ix_analysis_event_run_id_sequence"
-        }
-        assert {index["name"] for index in inspector.get_indexes("tool_call_record")} == {
-            "ix_tool_call_record_run_id"
-        }
-        assert {index["name"] for index in inspector.get_indexes("analysis_result")} == {
-            "ix_analysis_result_run_id"
-        }
+        assert isinstance(columns["analysis_run"]["id"]["type"], String)
+        assert columns["analysis_run"]["id"]["type"].length == 36
+        assert columns["analysis_run"]["id"]["nullable"] is False
+        assert isinstance(columns["analysis_run"]["user_query"]["type"], Text)
+        assert isinstance(columns["analysis_run"]["started_at"]["type"], DateTime)
+        assert columns["analysis_run"]["finished_at"]["nullable"] is True
+        assert isinstance(columns["analysis_event"]["sequence"]["type"], Integer)
+        assert isinstance(columns["analysis_event"]["payload_json"]["type"], JSON)
+        assert columns["analysis_event"]["payload_json"]["nullable"] is True
+        assert isinstance(columns["analysis_event"]["terminal"]["type"], Boolean)
+        assert columns["analysis_event"]["terminal"]["nullable"] is False
+        assert isinstance(columns["tool_call_record"]["duration_ms"]["type"], Integer)
+        assert columns["tool_call_record"]["result_json"]["nullable"] is True
+        assert isinstance(columns["tool_call_record"]["success"]["type"], Boolean)
+        assert isinstance(columns["analysis_result"]["confidence"]["type"], Float)
+        assert isinstance(columns["analysis_result"]["full_result_json"]["type"], JSON)
+        assert columns["analysis_result"]["full_result_json"]["nullable"] is False
+        assert columns["watchlist_item"]["note"]["nullable"] is True
 
-        event_uniques = inspector.get_unique_constraints("analysis_event")
-        assert {tuple(item["column_names"]) for item in event_uniques} == {("run_id", "sequence")}
-        result_uniques = inspector.get_unique_constraints("analysis_result")
-        assert {tuple(item["column_names"]) for item in result_uniques} == {("run_id",)}
+        expected_primary_keys = {
+            "analysis_run": ("id",),
+            "analysis_event": ("id",),
+            "tool_call_record": ("id",),
+            "analysis_result": ("id",),
+            "watchlist_item": ("symbol",),
+        }
+        for table_name, column_names in expected_primary_keys.items():
+            primary_key = inspector.get_pk_constraint(table_name)
+            assert tuple(primary_key["constrained_columns"]) == column_names
 
-        for table_name in ("analysis_event", "tool_call_record", "analysis_result"):
+        expected_indexes = {
+            "analysis_run": {"ix_analysis_run_status_started_at": ("status", "started_at")},
+            "analysis_event": {"ix_analysis_event_run_id_sequence": ("run_id", "sequence")},
+            "tool_call_record": {"ix_tool_call_record_run_id": ("run_id",)},
+            "analysis_result": {"ix_analysis_result_run_id": ("run_id",)},
+        }
+        for table_name, expected_table_indexes in expected_indexes.items():
+            indexes = inspector.get_indexes(table_name)
+            assert {
+                index["name"]: tuple(index["column_names"]) for index in indexes
+            } == expected_table_indexes
+            assert all(not index["unique"] for index in indexes)
+
+        event_uniques = {
+            item["name"]: tuple(item["column_names"])
+            for item in inspector.get_unique_constraints("analysis_event")
+        }
+        assert event_uniques == {"uq_analysis_event_run_id_sequence": ("run_id", "sequence")}
+        result_uniques = {
+            item["name"]: tuple(item["column_names"])
+            for item in inspector.get_unique_constraints("analysis_result")
+        }
+        assert result_uniques == {"uq_analysis_result_run_id": ("run_id",)}
+
+        expected_foreign_keys = {
+            "analysis_event": "fk_analysis_event_run_id",
+            "tool_call_record": "fk_tool_call_record_run_id",
+            "analysis_result": "fk_analysis_result_run_id",
+        }
+        for table_name, constraint_name in expected_foreign_keys.items():
             foreign_keys = inspector.get_foreign_keys(table_name)
             assert len(foreign_keys) == 1
-            assert foreign_keys[0]["referred_table"] == "analysis_run"
-            assert foreign_keys[0]["constrained_columns"] == ["run_id"]
+            foreign_key = foreign_keys[0]
+            assert foreign_key["name"] == constraint_name
+            assert foreign_key["referred_table"] == "analysis_run"
+            assert foreign_key["constrained_columns"] == ["run_id"]
+            assert foreign_key["referred_columns"] == ["id"]
+            assert foreign_key["options"]["ondelete"] == "CASCADE"
     finally:
         database.dispose()
 

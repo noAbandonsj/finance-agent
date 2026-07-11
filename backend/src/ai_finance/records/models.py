@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -134,7 +134,7 @@ class CompletedAnalysisRecord(FrozenRecord):
     risks: list[str]
     invalidation_conditions: list[str]
     full_result: dict[str, object]
-    data_cutoff: datetime
+    data_cutoff: AwareDatetime
 
 
 class AnalysisRunRecord(FrozenRecord):
@@ -169,8 +169,8 @@ class NewToolCallRecord(FrozenRecord):
     arguments: dict[str, object]
     result: dict[str, object] | None
     provider: str | None
-    market_time: datetime | None
-    retrieved_at: datetime
+    market_time: AwareDatetime | None
+    retrieved_at: AwareDatetime
     duration_ms: int
     success: bool
     error_code: str | None = None

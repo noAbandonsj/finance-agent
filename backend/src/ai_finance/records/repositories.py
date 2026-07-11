@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
+from time import sleep
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from ai_finance.market.symbols import normalize_symbol
@@ -23,6 +25,10 @@ from ai_finance.records.models import (
     WatchlistItemRow,
     utc_now,
 )
+
+
+_EVENT_APPEND_MAX_ATTEMPTS = 5
+_EVENT_APPEND_RETRY_DELAY_SECONDS = 0.01
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -115,6 +121,14 @@ def _require_run(session: Session, run_id: str) -> AnalysisRunRow:
     return row
 
 
+def _is_retryable_event_conflict(error: IntegrityError | OperationalError) -> bool:
+    message = str(error.orig).lower()
+    return "database is locked" in message or (
+        "unique constraint failed" in message
+        and "analysis_event.run_id, analysis_event.sequence" in message
+    )
+
+
 class AnalysisRepository:
     def __init__(self, database: Database) -> None:
         self._database = database
@@ -150,24 +164,36 @@ class AnalysisRepository:
         payload: dict[str, object] | None,
         terminal: bool,
     ) -> AnalysisEventRecord:
-        with self._database.session() as session, session.begin():
-            _require_run(session, run_id)
-            last_sequence = session.scalar(
-                select(func.max(AnalysisEventRow.sequence)).where(AnalysisEventRow.run_id == run_id)
-            )
-            row = AnalysisEventRow(
-                run_id=run_id,
-                sequence=(last_sequence or 0) + 1,
-                event_type=event_type,
-                message=message,
-                payload_json=payload,
-                terminal=terminal,
-                created_at=utc_now(),
-            )
-            session.add(row)
-            session.flush()
-            record = _event_record(row)
-        return record
+        for attempt in range(_EVENT_APPEND_MAX_ATTEMPTS):
+            try:
+                with self._database.session() as session, session.begin():
+                    _require_run(session, run_id)
+                    last_sequence = session.scalar(
+                        select(func.max(AnalysisEventRow.sequence)).where(
+                            AnalysisEventRow.run_id == run_id
+                        )
+                    )
+                    row = AnalysisEventRow(
+                        run_id=run_id,
+                        sequence=(last_sequence or 0) + 1,
+                        event_type=event_type,
+                        message=message,
+                        payload_json=payload,
+                        terminal=terminal,
+                        created_at=utc_now(),
+                    )
+                    session.add(row)
+                    session.flush()
+                    record = _event_record(row)
+                return record
+            except (IntegrityError, OperationalError) as error:
+                if attempt + 1 == _EVENT_APPEND_MAX_ATTEMPTS or not _is_retryable_event_conflict(
+                    error
+                ):
+                    raise
+                sleep(_EVENT_APPEND_RETRY_DELAY_SECONDS * (attempt + 1))
+
+        raise RuntimeError("Event append retry loop exhausted")
 
     def list_events(self, run_id: str, after_sequence: int) -> list[AnalysisEventRecord]:
         with self._database.session() as session, session.begin():
