@@ -204,3 +204,41 @@ def test_missing_required_market_tools_becomes_insufficient_data(tmp_path) -> No
 
     assert validated.status is AnalysisStatus.INSUFFICIENT_DATA
     assert validated.market_view is MarketView.UNCERTAIN
+
+
+def test_uncited_required_market_tools_become_insufficient_data(tmp_path) -> None:
+    _service, repository = make_service(tmp_path)
+    run = repository.create_run("one", "600519", "m", "p", "t1")
+    profile = repository.record_tool_call(
+        NewToolCallRecord(
+            run_id=run.id,
+            tool_name="get_security_profile",
+            arguments={},
+            result={},
+            provider="test",
+            market_time=None,
+            retrieved_at=datetime(2026, 7, 11, tzinfo=timezone.utc),
+            duration_ms=1,
+            success=True,
+        )
+    )
+    for name in ("get_market_snapshot", "calculate_market_metrics"):
+        repository.record_tool_call(
+            NewToolCallRecord(
+                run_id=run.id,
+                tool_name=name,
+                arguments={},
+                result={},
+                provider="test",
+                market_time=datetime(2026, 7, 11, tzinfo=timezone.utc),
+                retrieved_at=datetime(2026, 7, 11, tzinfo=timezone.utc),
+                duration_ms=1,
+                success=True,
+            )
+        )
+
+    validated = EvidenceValidator(repository).validate(
+        run.id, make_analysis(profile.id, profile.id)
+    )
+
+    assert validated.status is AnalysisStatus.INSUFFICIENT_DATA

@@ -31,8 +31,9 @@ class EvidenceValidator:
         ]
         data_cutoff = max(cited_market_times, default=analysis.generated_at)
         successful_tools = {record.tool_name for record in records}
+        cited_tools = {records_by_id[evidence_id].tool_name for evidence_id in evidence_ids}
 
-        if not self.REQUIRED_TOOLS.issubset(successful_tools):
+        if not self.REQUIRED_TOOLS.issubset(successful_tools & cited_tools):
             return analysis.model_copy(
                 update={
                     "status": AnalysisStatus.INSUFFICIENT_DATA,

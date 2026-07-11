@@ -1,12 +1,21 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 
-defineProps<{ running: boolean }>()
+const props = withDefaults(defineProps<{ running: boolean; initialSymbol?: string }>(), {
+  initialSymbol: '600519',
+})
 const emit = defineEmits<{ submit: [symbol: string, question: string] }>()
 
-const symbol = ref('600519')
+const symbol = ref(props.initialSymbol)
 const question = ref('结合最新行情和量价指标，分析当前状态、主要风险与失效条件。')
+
+watch(
+  () => props.initialSymbol,
+  (value) => {
+    if (value) symbol.value = value
+  },
+)
 
 function submit(): void {
   const normalizedSymbol = symbol.value.trim()

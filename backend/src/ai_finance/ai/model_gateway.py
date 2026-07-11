@@ -12,7 +12,7 @@ class ModelGateway:
         self._settings = settings
 
     def create(self, model_name: str) -> ChatOpenAI:
-        if self._settings.deepseek_api_key is None:
+        if not self._settings.model_configured:
             raise ModelNotConfiguredError("DEEPSEEK_API_KEY is not configured")
 
         return ChatOpenAI(

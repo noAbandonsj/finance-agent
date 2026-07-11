@@ -1,7 +1,18 @@
 import { expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import ElementPlus from 'element-plus'
 
 import AnalysisResult from '../src/components/research/AnalysisResult.vue'
+import ResearchForm from '../src/components/research/ResearchForm.vue'
+
+it('prefills a symbol supplied by navigation', () => {
+  const wrapper = mount(ResearchForm, {
+    props: { running: false, initialSymbol: '510300.SH' },
+    global: { plugins: [ElementPlus] },
+  })
+
+  expect(wrapper.get('input').element.value).toBe('510300.SH')
+})
 
 it('renders insufficient data without directional action styling', () => {
   const wrapper = mount(AnalysisResult, {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
 
 import AnalysisResult from '@/components/research/AnalysisResult.vue'
 import MetricsStrip from '@/components/research/MetricsStrip.vue'
@@ -9,6 +10,10 @@ import ResearchProgress from '@/components/research/ResearchProgress.vue'
 import { useResearchStore } from '@/stores/research'
 
 const research = useResearchStore()
+const route = useRoute()
+const initialSymbol = computed(() =>
+  typeof route.query.symbol === 'string' ? route.query.symbol : '600519',
+)
 
 onBeforeUnmount(() => research.dispose())
 </script>
@@ -24,7 +29,11 @@ onBeforeUnmount(() => research.dispose())
 
     <div class="research-workspace">
       <section class="research-market-pane">
-        <ResearchForm :running="research.running" @submit="research.submit" />
+        <ResearchForm
+          :running="research.running"
+          :initial-symbol="initialSymbol"
+          @submit="research.submit"
+        />
         <ResearchProgress :phase="research.phase" :events="research.events" />
         <MetricsStrip :snapshot="research.snapshot" :metrics="research.metrics" />
         <div class="chart-band">

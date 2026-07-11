@@ -22,3 +22,11 @@ def test_health_is_local_service_ready() -> None:
     response = TestClient(create_app(Settings(_env_file=None))).get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "service": "ai-finance-backend"}
+
+
+def test_empty_api_key_is_not_reported_as_configured() -> None:
+    settings = Settings(deepseek_api_key="   ", _env_file=None)
+
+    response = TestClient(create_app(settings)).get("/api/config/status")
+
+    assert response.json()["model_configured"] is False

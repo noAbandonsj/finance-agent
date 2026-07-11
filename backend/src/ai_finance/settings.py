@@ -21,7 +21,9 @@ class Settings(BaseSettings):
 
     @property
     def model_configured(self) -> bool:
-        return self.deepseek_api_key is not None
+        return self.deepseek_api_key is not None and bool(
+            self.deepseek_api_key.get_secret_value().strip()
+        )
 
 
 @lru_cache
