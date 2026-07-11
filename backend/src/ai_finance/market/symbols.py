@@ -7,14 +7,18 @@ _SYMBOL_PATTERN = re.compile(
 )
 
 
+class InvalidSymbolError(ValueError):
+    """Raised when a security identifier cannot be normalized."""
+
+
 def normalize_symbol(value: str) -> str:
     if not isinstance(value, str):
-        raise ValueError(f"Unsupported symbol: {value}")
+        raise InvalidSymbolError(f"Unsupported symbol: {value}")
 
     compact = re.sub(r"\s+", "", value).upper()
     match = _SYMBOL_PATTERN.fullmatch(compact)
     if match is None:
-        raise ValueError(f"Unsupported symbol: {value}")
+        raise InvalidSymbolError(f"Unsupported symbol: {value}")
 
     prefix, code, suffix = match.groups()
     exchange = _infer_exchange(code)
@@ -22,7 +26,7 @@ def normalize_symbol(value: str) -> str:
     if (prefix and suffix and prefix != suffix) or (
         explicit_exchange and explicit_exchange != exchange
     ):
-        raise ValueError(f"Unsupported symbol: {value}")
+        raise InvalidSymbolError(f"Unsupported symbol: {value}")
 
     return f"{code}.{exchange}"
 
@@ -34,4 +38,4 @@ def _infer_exchange(code: str) -> str:
         return "SH"
     if code[0] in {"0", "1", "2", "3"}:
         return "SZ"
-    raise ValueError(f"Unsupported symbol: {code}")
+    raise InvalidSymbolError(f"Unsupported symbol: {code}")
