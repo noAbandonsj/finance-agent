@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from math import sqrt
+from math import inf, nan, sqrt
 
 import pytest
 
@@ -7,11 +7,11 @@ from ai_finance.analytics.service import MarketMetricsService
 from ai_finance.market.models import DailyBar
 
 
-def make_bars(closes: list[float]) -> list[DailyBar]:
+def make_bars(closes: list[float], *, symbol: str = "600519.SH") -> list[DailyBar]:
     first_day = date(2026, 1, 5)
     return [
         DailyBar(
-            symbol="600519.SH",
+            symbol=symbol,
             trading_date=first_day + timedelta(days=index),
             open=close,
             high=close,
@@ -23,6 +23,41 @@ def make_bars(closes: list[float]) -> list[DailyBar]:
         )
         for index, close in enumerate(closes)
     ]
+
+
+def test_rejects_empty_history() -> None:
+    with pytest.raises(ValueError, match="bars must not be empty"):
+        MarketMetricsService().calculate("600519.SH", [])
+
+
+@pytest.mark.parametrize(
+    "invalid_close",
+    [
+        pytest.param(0.0, id="zero"),
+        pytest.param(-1.0, id="negative"),
+        pytest.param(nan, id="nan"),
+        pytest.param(inf, id="positive-infinity"),
+        pytest.param(-inf, id="negative-infinity"),
+    ],
+)
+def test_rejects_non_positive_or_non_finite_closes(invalid_close: float) -> None:
+    with pytest.raises(ValueError, match="close values must be finite and greater than zero"):
+        MarketMetricsService().calculate("600519.SH", make_bars([invalid_close]))
+
+
+def test_rejects_bar_symbol_mismatch() -> None:
+    bars = make_bars([10.0, 11.0], symbol="510300.SH")
+
+    with pytest.raises(ValueError, match="all bars must match the requested symbol"):
+        MarketMetricsService().calculate("600519.SH", bars)
+
+
+def test_rejects_mixed_bar_symbols() -> None:
+    bars = make_bars([10.0, 11.0])
+    bars[1] = bars[1].model_copy(update={"symbol": "510300.SH"})
+
+    with pytest.raises(ValueError, match="all bars must match the requested symbol"):
+        MarketMetricsService().calculate("600519.SH", bars)
 
 
 def test_calculates_returns_moving_average_volatility_and_drawdown() -> None:
@@ -39,8 +74,33 @@ def test_calculates_returns_moving_average_volatility_and_drawdown() -> None:
     assert result.annualized_volatility is not None
 
 
+def test_uses_trailing_metric_windows_and_complete_history_for_drawdown() -> None:
+    closes = [100.0, 50.0, 80.0, 90.0, 95.0, *map(float, range(100, 165))]
+    volumes = [1000.0] * 45 + [10.0] * 20 + [40.0] * 5
+    bars = [
+        bar.model_copy(update={"volume": volume})
+        for bar, volume in zip(make_bars(closes), volumes, strict=True)
+    ]
+
+    result = MarketMetricsService().calculate("600519.SH", bars)
+
+    assert result.observation_count == 70
+    assert result.returns["5d"] == pytest.approx(164.0 / 159.0 - 1.0)
+    assert result.returns["20d"] == pytest.approx(164.0 / 144.0 - 1.0)
+    assert result.returns["60d"] == pytest.approx(164.0 / 104.0 - 1.0)
+    assert result.moving_averages == {
+        "5d": pytest.approx(162.0),
+        "20d": pytest.approx(154.5),
+        "60d": pytest.approx(134.5),
+    }
+    assert result.volume_ratio == pytest.approx(4.0)
+    assert result.max_drawdown == pytest.approx(-0.5)
+
+
 def test_returns_none_when_history_is_insufficient() -> None:
-    result = MarketMetricsService().calculate("510300.SH", make_bars([4.0, 4.1]))
+    result = MarketMetricsService().calculate(
+        "510300.SH", make_bars([4.0, 4.1], symbol="510300.SH")
+    )
 
     assert result.returns == {"5d": None, "20d": None, "60d": None}
     assert result.moving_averages["5d"] is None

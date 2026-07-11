@@ -1,4 +1,4 @@
-from math import sqrt
+from math import isfinite, sqrt
 from statistics import stdev
 
 from ai_finance.analytics.models import MarketMetrics
@@ -7,7 +7,15 @@ from ai_finance.market.models import DailyBar
 
 class MarketMetricsService:
     def calculate(self, symbol: str, bars: list[DailyBar]) -> MarketMetrics:
+        if not bars:
+            raise ValueError("bars must not be empty")
+        if any(bar.symbol != symbol for bar in bars):
+            raise ValueError("all bars must match the requested symbol")
+
         closes = [bar.close for bar in bars]
+        if any(not isfinite(close) or close <= 0 for close in closes):
+            raise ValueError("close values must be finite and greater than zero")
+
         daily_returns = [
             current_close / previous_close - 1.0
             for previous_close, current_close in zip(closes, closes[1:], strict=False)
