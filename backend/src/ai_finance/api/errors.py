@@ -47,3 +47,7 @@ def register_error_handlers(app: FastAPI) -> None:
             "PROVIDER_TIMEOUT",
             "Market data request exceeded 20 seconds",
         )
+
+    @app.exception_handler(LookupError)
+    async def record_not_found_handler(_request: Request, exc: LookupError) -> JSONResponse:
+        return problem_response(404, "Record not found", "RECORD_NOT_FOUND", str(exc))
