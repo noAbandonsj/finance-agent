@@ -17,6 +17,9 @@ class DuplicateToolCallError(RuntimeError):
     code = "DUPLICATE_TOOL_CALL"
 
 
+MARKET_OPERATION_TIMEOUT_SECONDS = 20.0
+
+
 class ResearchToolFactory:
     def __init__(
         self,
@@ -58,7 +61,10 @@ class ResearchToolFactory:
 
     async def get_security_profile(self, symbol: str) -> dict[str, object]:
         async def operation() -> tuple[dict[str, object], str | None, datetime | None, datetime]:
-            profile = await asyncio.to_thread(self._market_service.get_security_profile, symbol)
+            profile = await asyncio.wait_for(
+                asyncio.to_thread(self._market_service.get_security_profile, symbol),
+                timeout=MARKET_OPERATION_TIMEOUT_SECONDS,
+            )
             return (
                 profile.model_dump(mode="json"),
                 profile.provider,
@@ -70,7 +76,10 @@ class ResearchToolFactory:
 
     async def get_market_snapshot(self, symbol: str) -> dict[str, object]:
         async def operation() -> tuple[dict[str, object], str | None, datetime | None, datetime]:
-            snapshot = await asyncio.to_thread(self._market_service.get_market_snapshot, symbol)
+            snapshot = await asyncio.wait_for(
+                asyncio.to_thread(self._market_service.get_market_snapshot, symbol),
+                timeout=MARKET_OPERATION_TIMEOUT_SECONDS,
+            )
             return (
                 snapshot.model_dump(mode="json"),
                 snapshot.provider,
@@ -84,8 +93,9 @@ class ResearchToolFactory:
         arguments = {"symbol": symbol, "trading_days": trading_days}
 
         async def operation() -> tuple[dict[str, object], str | None, datetime | None, datetime]:
-            bars = await asyncio.to_thread(
-                self._market_service.get_daily_bars, symbol, trading_days
+            bars = await asyncio.wait_for(
+                asyncio.to_thread(self._market_service.get_daily_bars, symbol, trading_days),
+                timeout=MARKET_OPERATION_TIMEOUT_SECONDS,
             )
             retrieved_at = datetime.now(timezone.utc)
             market_time = (
@@ -111,8 +121,9 @@ class ResearchToolFactory:
         arguments = {"symbol": symbol, "trading_days": trading_days}
 
         async def operation() -> tuple[dict[str, object], str | None, datetime | None, datetime]:
-            bars = await asyncio.to_thread(
-                self._market_service.get_daily_bars, symbol, trading_days
+            bars = await asyncio.wait_for(
+                asyncio.to_thread(self._market_service.get_daily_bars, symbol, trading_days),
+                timeout=MARKET_OPERATION_TIMEOUT_SECONDS,
             )
             canonical_symbol = bars[0].symbol if bars else symbol
             metrics = await asyncio.to_thread(
