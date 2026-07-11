@@ -15,6 +15,12 @@
   --accent-soft: #e3f3ec;
   --amber: #a76d12;
   --danger: #bd4040;
+  --el-color-primary: #16805b;
+  --el-color-primary-light-3: #4da283;
+  --el-color-primary-light-5: #7ab9a0;
+  --el-color-primary-light-7: #aad4c2;
+  --el-color-primary-light-9: #e3f3ec;
+  --el-color-primary-dark-2: #106747;
 }
 
 * {
@@ -526,7 +532,7 @@ p {
   font-size: 13px;
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1320px) {
   .research-workspace {
     grid-template-columns: 1fr;
   }
@@ -540,7 +546,7 @@ p {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .app-frame {
     display: block;
     padding-bottom: 62px;
