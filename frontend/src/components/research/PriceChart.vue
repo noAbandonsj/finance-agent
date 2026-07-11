@@ -32,7 +32,7 @@ function render(): void {
       },
     ],
     yAxis: [
-      { type: 'value', scale: true, splitLine: { lineStyle: { color: '#e8ece9' } } },
+      { type: 'value', scale: true, splitLine: { lineStyle: { color: '#e2e5e1' } } },
       { type: 'value', gridIndex: 1, splitLine: { show: false }, axisLabel: { show: false } },
     ],
     dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], start: 25, end: 100 }],
@@ -42,8 +42,8 @@ function render(): void {
         type: 'line',
         data: props.bars.map((bar) => bar.close),
         showSymbol: false,
-        lineStyle: { width: 2, color: '#16805b' },
-        areaStyle: { color: 'rgba(22, 128, 91, 0.08)' },
+        lineStyle: { width: 2, color: '#2c5c7c' },
+        areaStyle: { color: 'rgba(44, 92, 124, 0.08)' },
       },
       {
         name: '成交量',
@@ -51,7 +51,7 @@ function render(): void {
         xAxisIndex: 1,
         yAxisIndex: 1,
         data: props.bars.map((bar) => bar.volume),
-        itemStyle: { color: '#93a39a' },
+        itemStyle: { color: '#aeb8b3' },
       },
     ],
   })

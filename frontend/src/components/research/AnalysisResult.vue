@@ -21,18 +21,32 @@ const viewLabel = computed(() => {
   }
   return labels[props.analysis.market_view]
 })
+
+const needleLeft = computed(() => {
+  const confidence = props.analysis.confidence
+  const view = props.analysis.market_view
+  if (view === 'BULLISH') return `${50 + confidence * 50}%`
+  if (view === 'BEARISH') return `${50 - confidence * 50}%`
+  return '50%'
+})
 </script>
 
 <template>
   <article class="analysis-result" :class="directionalClass">
     <header class="analysis-header">
       <div>
-        <span class="view-label">{{ viewLabel }}</span>
+        <span class="view-label" :class="directionalClass">{{ viewLabel }}</span>
         <h2>{{ analysis.security_name }} · {{ analysis.symbol }}</h2>
       </div>
-      <div class="confidence">
-        <span>置信度</span>
-        <strong>{{ Math.round(analysis.confidence * 100) }}%</strong>
+      <div class="view-gauge">
+        <div class="view-gauge-value">
+          <span>置信度</span>
+          <strong>{{ Math.round(analysis.confidence * 100) }}%</strong>
+        </div>
+        <div class="view-gauge-track">
+          <span class="view-gauge-needle" :style="{ left: needleLeft }" />
+        </div>
+        <div class="view-gauge-scale"><span>偏空</span><span>偏多</span></div>
       </div>
     </header>
 
