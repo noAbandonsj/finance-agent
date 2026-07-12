@@ -47,20 +47,45 @@ it('creates a run, streams completion, and restores market data', async () => {
     status: 'COMPLETE',
     symbol: '600519.SH',
     result: {
-      full_result: {
-        status: 'COMPLETE',
-        market_view: 'NEUTRAL',
-        confidence: 0.6,
-        summary: 'Balanced',
-      },
+      id: 'result-1',
+      run_id: 'run-1',
+      report_markdown: '# Report\n\nBalanced',
+      created_at: '2026-07-11T00:00:00Z',
     },
     events: [],
-    tool_calls: [],
+    tool_calls: [
+      {
+        id: 'snapshot-1',
+        run_id: 'run-1',
+        tool_name: 'get_market_snapshot',
+        arguments: { symbol: '600519.SH' },
+        result: { symbol: '600519.SH', last: 1400 },
+        provider: 'test',
+        market_time: '2026-07-11T00:00:00Z',
+        retrieved_at: '2026-07-11T00:00:01Z',
+        duration_ms: 1,
+        success: true,
+        error_code: null,
+      },
+      {
+        id: 'history-1',
+        run_id: 'run-1',
+        tool_name: 'get_price_history',
+        arguments: { symbol: '600519.SH' },
+        result: {
+          bars: [{ symbol: '600519.SH', trading_date: '2026-07-10', close: 1400 }],
+        },
+        provider: 'test',
+        market_time: '2026-07-10T00:00:00Z',
+        retrieved_at: '2026-07-11T00:00:01Z',
+        duration_ms: 1,
+        success: true,
+        error_code: null,
+      },
+    ],
   } as never)
-  vi.spyOn(api, 'getMarketSnapshot').mockResolvedValue({ symbol: '600519.SH', last: 1400 } as never)
-  vi.spyOn(api, 'getDailyBars').mockResolvedValue([
-    { symbol: '600519.SH', trading_date: '2026-07-10', close: 1400 },
-  ] as never)
+  const snapshotSpy = vi.spyOn(api, 'getMarketSnapshot')
+  const barsSpy = vi.spyOn(api, 'getDailyBars')
 
   const store = useResearchStore()
   await store.submit('600519', '分析当前状态')
@@ -73,6 +98,9 @@ it('creates a run, streams completion, and restores market data', async () => {
 
   expect(store.snapshot?.symbol).toBe('600519.SH')
   expect(store.bars).toHaveLength(1)
+  expect(store.report).toContain('Balanced')
+  expect(snapshotSpy).not.toHaveBeenCalled()
+  expect(barsSpy).not.toHaveBeenCalled()
   expect(FakeEventSource.latest?.closed).toBe(true)
 })
 

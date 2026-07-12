@@ -30,32 +30,26 @@ def create_run(payload: dict[str, str]) -> dict[str, str]:
     run_id = str(uuid4())
     raw_symbol = payload["symbol"].split(".")[0]
     symbol = f"{raw_symbol}.{'SH' if raw_symbol.startswith(('5', '6', '9')) else 'SZ'}"
-    insufficient = raw_symbol == "510300"
-    analysis_status = "INSUFFICIENT_DATA" if insufficient else "COMPLETE"
-    market_view = "UNCERTAIN" if insufficient else "NEUTRAL"
-    analysis = {
-        "status": analysis_status,
-        "symbol": symbol,
-        "security_name": "Recorded Security",
-        "market_view": market_view,
-        "horizon": "20 trading days",
-        "confidence": 0 if insufficient else 0.64,
-        "summary": "数据不足，暂不形成方向判断。"
-        if insufficient
-        else "量价证据相互制衡，当前维持中性判断。",
-        "supporting_evidence": []
-        if insufficient
-        else [{"evidence_id": "snapshot-1", "statement": "最新价格保持稳定。"}],
-        "opposing_evidence": []
-        if insufficient
-        else [{"evidence_id": "metrics-1", "statement": "短期波动仍然存在。"}],
-        "risks": ["测试环境中的记录数据不代表实时市场"],
-        "invalidation_conditions": ["价格趋势发生显著变化"],
-        "data_cutoff": "2026-07-11T00:00:00Z",
-        "generated_at": "2026-07-11T00:01:00Z",
-        "model_name": "deepseek-v4-pro",
-        "prompt_version": "research-v1",
-    }
+    limited = raw_symbol == "510300"
+    report = (
+        "# 数据限制\n\n数据不足，暂不形成方向判断。"
+        if limited
+        else "# 研究结论\n\n量价证据相互制衡，当前维持中性判断。\n\n## 风险\n\n- 测试数据不代表实时市场"
+    )
+    bars = [
+        {
+            "symbol": symbol,
+            "trading_date": (date(2026, 5, 1) + timedelta(days=index)).isoformat(),
+            "open": 9.5 + index * 0.02,
+            "high": 9.7 + index * 0.02,
+            "low": 9.4 + index * 0.02,
+            "close": 9.6 + index * 0.02,
+            "volume": 1000 + index * 20,
+            "amount": 10000 + index * 200,
+            "provider": "recorded-e2e",
+        }
+        for index in range(60)
+    ]
     runs[run_id] = {
         "id": run_id,
         "thread_id": f"thread-{run_id}",
@@ -63,15 +57,62 @@ def create_run(payload: dict[str, str]) -> dict[str, str]:
         "symbol": symbol,
         "status": "COMPLETE",
         "model_name": "deepseek-v4-pro",
-        "prompt_version": "research-v1",
+        "prompt_version": "research-v2",
         "started_at": "2026-07-11T00:00:00Z",
         "finished_at": "2026-07-11T00:01:00Z",
         "data_cutoff": "2026-07-11T00:00:00Z",
         "error_code": None,
         "error_message": None,
-        "result": {"full_result": analysis},
+        "result": {
+            "id": f"result-{run_id}",
+            "run_id": run_id,
+            "report_markdown": report,
+            "created_at": "2026-07-11T00:01:00Z",
+        },
         "events": [],
         "tool_calls": [
+            {
+                "id": "snapshot-1",
+                "run_id": run_id,
+                "tool_name": "get_market_snapshot",
+                "arguments": {"symbol": symbol},
+                "result": {
+                    "symbol": symbol,
+                    "name": "Recorded Security",
+                    "security_type": "ETF" if symbol.startswith("5") else "STOCK",
+                    "last": 10.5,
+                    "previous_close": 10.4,
+                    "open": 10.4,
+                    "high": 10.6,
+                    "low": 10.3,
+                    "change_percent": 0.96,
+                    "volume": 100000,
+                    "amount": 1050000,
+                    "market_time": "2026-07-11T00:00:00Z",
+                    "timestamp_origin": "recorded",
+                    "provider": "recorded-e2e",
+                    "retrieved_at": "2026-07-11T00:00:01Z",
+                },
+                "provider": "recorded-e2e",
+                "market_time": "2026-07-11T00:00:00Z",
+                "retrieved_at": "2026-07-11T00:00:01Z",
+                "duration_ms": 1,
+                "success": True,
+                "error_code": None,
+            },
+            {
+                "id": "history-1",
+                "run_id": run_id,
+                "tool_name": "get_price_history",
+                "arguments": {"symbol": symbol, "trading_days": 60},
+                "result": {"symbol": symbol, "bars": bars},
+                "provider": "recorded-e2e",
+                "market_time": "2026-07-11T00:00:00Z",
+                "retrieved_at": "2026-07-11T00:00:01Z",
+                "duration_ms": 1,
+                "success": True,
+                "error_code": None,
+            },
             {
                 "id": "metrics-1",
                 "run_id": run_id,
@@ -105,8 +146,10 @@ def events(run_id: str) -> StreamingResponse:
     def generate():
         yield 'id: 1\nevent: RUN_CREATED\ndata: {"message":"Research run created","payload":{}}\n\n'
         yield 'id: 2\nevent: AGENT_STARTED\ndata: {"message":"AI research started","payload":{}}\n\n'
-        yield 'id: 3\nevent: AGENT_COMPLETED\ndata: {"message":"AI analysis completed","payload":{}}\n\n'
-        yield 'id: 4\nevent: RUN_COMPLETED\ndata: {"message":"Research run completed","payload":{}}\n\n'
+        yield 'id: 3\nevent: TOOL_STARTED\ndata: {"message":"Tool started: get_market_snapshot","payload":{"tool_name":"get_market_snapshot"}}\n\n'
+        yield 'id: 4\nevent: TOOL_COMPLETED\ndata: {"message":"Tool completed: get_market_snapshot","payload":{"tool_name":"get_market_snapshot","evidence_id":"snapshot-1"}}\n\n'
+        yield 'id: 5\nevent: AGENT_COMPLETED\ndata: {"message":"AI analysis completed","payload":{}}\n\n'
+        yield 'id: 6\nevent: RUN_COMPLETED\ndata: {"message":"Research run completed","payload":{}}\n\n'
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -121,14 +164,17 @@ def list_runs() -> list[dict[str, object]]:
     return [
         {
             "id": run["id"],
+            "thread_id": run["thread_id"],
+            "user_query": run["user_query"],
             "symbol": run["symbol"],
             "status": run["status"],
             "model_name": run["model_name"],
+            "prompt_version": run["prompt_version"],
             "started_at": run["started_at"],
-            "market_view": run["result"]["full_result"]["market_view"],
-            "confidence": run["result"]["full_result"]["confidence"],
-            "horizon": run["result"]["full_result"]["horizon"],
-            "summary": run["result"]["full_result"]["summary"],
+            "finished_at": run["finished_at"],
+            "data_cutoff": run["data_cutoff"],
+            "error_code": run["error_code"],
+            "error_message": run["error_message"],
         }
         for run in reversed(list(runs.values()))
     ]

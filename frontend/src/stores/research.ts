@@ -3,15 +3,12 @@ import { computed, ref } from 'vue'
 
 import {
   createResearchRun,
-  getDailyBars,
-  getMarketSnapshot,
   getResearchRun,
 } from '@/api/client'
 import type {
   DailyBar,
   MarketMetrics,
   MarketSnapshot,
-  ResearchAnalysis,
   ResearchEvent,
   ResearchPhase,
   ResearchRunDetail,
@@ -23,7 +20,7 @@ const terminalEvents = ['RUN_COMPLETED', 'RUN_FAILED'] as const
 export const useResearchStore = defineStore('research', () => {
   const phase = ref<ResearchPhase>('IDLE')
   const activeRunId = ref<string | null>(null)
-  const events = ref<Array<Pick<ResearchEvent, 'event_type' | 'message'>>>([])
+  const events = ref<Array<Pick<ResearchEvent, 'event_type' | 'message' | 'payload'>>>([])
   const detail = ref<ResearchRunDetail | null>(null)
   const snapshot = ref<MarketSnapshot | null>(null)
   const bars = ref<DailyBar[]>([])
@@ -31,7 +28,7 @@ export const useResearchStore = defineStore('research', () => {
   const error = ref<string | null>(null)
   let eventSource: EventSource | null = null
 
-  const analysis = computed<ResearchAnalysis | null>(() => detail.value?.result?.full_result ?? null)
+  const report = computed(() => detail.value?.result?.report_markdown ?? null)
   const running = computed(() => phase.value === 'CREATING' || phase.value === 'RUNNING')
 
   async function submit(symbol: string, question: string): Promise<void> {
@@ -56,20 +53,27 @@ export const useResearchStore = defineStore('research', () => {
     }
   }
 
+  function appendEvent(type: string, rawEvent: Event): void {
+    const event = rawEvent as MessageEvent<string>
+    const data = JSON.parse(event.data) as {
+      message: string
+      payload?: Record<string, unknown>
+    }
+    events.value.push({
+      event_type: type,
+      message: data.message,
+      payload: data.payload ?? null,
+    })
+  }
+
   function openStream(url: string): void {
     eventSource = new EventSource(url)
-    for (const type of progressEvents) {
-      eventSource.addEventListener(type, (rawEvent) => {
-        const event = rawEvent as MessageEvent<string>
-        const data = JSON.parse(event.data) as { message: string }
-        events.value.push({ event_type: type, message: data.message })
-      })
+    for (const type of [...progressEvents, 'TOOL_STARTED', 'TOOL_COMPLETED', 'TOOL_FAILED']) {
+      eventSource.addEventListener(type, (event) => appendEvent(type, event))
     }
     for (const type of terminalEvents) {
       eventSource.addEventListener(type, (rawEvent) => {
-        const event = rawEvent as MessageEvent<string>
-        const data = JSON.parse(event.data) as { message: string }
-        events.value.push({ event_type: type, message: data.message })
+        appendEvent(type, rawEvent)
         void finalize()
       })
     }
@@ -90,18 +94,20 @@ export const useResearchStore = defineStore('research', () => {
         error.value = runDetail.error_message || '研究任务失败'
         return
       }
-      const [marketSnapshot, dailyBars] = await Promise.all([
-        getMarketSnapshot(runDetail.symbol),
-        getDailyBars(runDetail.symbol, 120),
-      ])
-      snapshot.value = marketSnapshot
-      bars.value = dailyBars
+      const snapshotCall = [...runDetail.tool_calls]
+        .reverse()
+        .find((call) => call.tool_name === 'get_market_snapshot' && call.success)
+      snapshot.value = (snapshotCall?.result as unknown as MarketSnapshot) ?? null
+      const historyCall = [...runDetail.tool_calls]
+        .reverse()
+        .find((call) => call.tool_name === 'get_price_history' && call.success)
+      const historyResult = historyCall?.result as { bars?: DailyBar[] } | null | undefined
+      bars.value = historyResult?.bars ?? []
       const metricsCall = runDetail.tool_calls.find(
         (call) => call.tool_name === 'calculate_market_metrics' && call.success,
       )
       metrics.value = (metricsCall?.result as unknown as MarketMetrics) ?? null
-      phase.value =
-        analysis.value?.status === 'INSUFFICIENT_DATA' ? 'INSUFFICIENT_DATA' : 'COMPLETE'
+      phase.value = 'COMPLETE'
     } catch (cause) {
       phase.value = 'FAILED'
       error.value = cause instanceof Error ? cause.message : '无法加载研究结果'
@@ -131,7 +137,7 @@ export const useResearchStore = defineStore('research', () => {
     bars,
     metrics,
     error,
-    analysis,
+    report,
     running,
     submit,
     restore,

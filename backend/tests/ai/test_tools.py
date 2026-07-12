@@ -94,6 +94,13 @@ async def test_tool_persists_result_and_returns_evidence_id(tmp_path) -> None:
     assert result["symbol"] == "600519.SH"
     assert records[0].success is True
     assert records[0].market_time == datetime(2026, 7, 11, tzinfo=timezone.utc)
+    events = repository.list_events(run_id, 0)
+    assert [event.event_type for event in events] == ["TOOL_STARTED", "TOOL_COMPLETED"]
+    assert events[-1].payload == {
+        "tool_name": "get_market_snapshot",
+        "duration_ms": records[0].duration_ms,
+        "evidence_id": records[0].id,
+    }
 
 
 @pytest.mark.asyncio
@@ -102,11 +109,12 @@ async def test_identical_tool_call_cannot_execute_twice(tmp_path) -> None:
     tool = tools["get_market_snapshot"]
 
     await tool.ainvoke({"symbol": "600519"})
-    with pytest.raises(DuplicateToolCallError):
-        await tool.ainvoke({"symbol": "600519"})
+    duplicate_result = await tool.ainvoke({"symbol": "600519"})
 
+    assert f"[{DuplicateToolCallError.code}]" in duplicate_result
     assert market_service.snapshot_calls == 1
     assert len(repository.list_tool_calls(run_id)) == 1
+    assert repository.list_events(run_id, 0)[-1].event_type == "TOOL_FAILED"
 
 
 @pytest.mark.asyncio
@@ -120,3 +128,24 @@ async def test_metrics_tool_uses_deterministic_calculator(tmp_path) -> None:
     assert result["observation_count"] == 10
     assert result["returns"]["5d"] == pytest.approx(1.0)
     assert result["evidence_id"]
+
+
+@pytest.mark.asyncio
+async def test_tool_failure_is_recorded_and_returned_to_the_agent(tmp_path, monkeypatch) -> None:
+    tools, repository, run_id, market_service = make_tools(tmp_path)
+
+    def fail_snapshot(symbol: str) -> MarketSnapshot:
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(market_service, "get_market_snapshot", fail_snapshot)
+    result = await tools["get_market_snapshot"].ainvoke({"symbol": "600519"})
+
+    assert "Tool error [RUNTIMEERROR]" in result
+    records = repository.list_tool_calls(run_id)
+    assert len(records) == 1
+    assert records[0].success is False
+    assert records[0].error_code == "RUNTIMEERROR"
+    assert [event.event_type for event in repository.list_events(run_id, 0)] == [
+        "TOOL_STARTED",
+        "TOOL_FAILED",
+    ]

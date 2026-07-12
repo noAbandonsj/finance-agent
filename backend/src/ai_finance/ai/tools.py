@@ -5,7 +5,7 @@ from datetime import datetime, time, timezone
 from time import perf_counter
 from typing import Any
 
-from langchain_core.tools import BaseTool, StructuredTool
+from langchain_core.tools import BaseTool, StructuredTool, ToolException
 
 from ai_finance.analytics.service import MarketMetricsService
 from ai_finance.market.service import MarketDataService
@@ -13,8 +13,17 @@ from ai_finance.records.models import NewToolCallRecord
 from ai_finance.records.repositories import AnalysisRepository
 
 
-class DuplicateToolCallError(RuntimeError):
+class RecordedToolError(ToolException):
+    def __init__(self, message: str, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class DuplicateToolCallError(RecordedToolError):
     code = "DUPLICATE_TOOL_CALL"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, self.code)
 
 
 MARKET_OPERATION_TIMEOUT_SECONDS = 20.0
@@ -41,21 +50,25 @@ class ResearchToolFactory:
                 coroutine=self.get_security_profile,
                 name="get_security_profile",
                 description="Get canonical security identity and type for an A-share or ETF.",
+                handle_tool_error=_handle_tool_error,
             ),
             StructuredTool.from_function(
                 coroutine=self.get_market_snapshot,
                 name="get_market_snapshot",
                 description="Get the latest available normalized market snapshot.",
+                handle_tool_error=_handle_tool_error,
             ),
             StructuredTool.from_function(
                 coroutine=self.get_price_history,
                 name="get_price_history",
                 description="Get normalized ascending daily price history.",
+                handle_tool_error=_handle_tool_error,
             ),
             StructuredTool.from_function(
                 coroutine=self.calculate_market_metrics,
                 name="calculate_market_metrics",
                 description="Calculate deterministic returns, trend, volatility, and drawdown.",
+                handle_tool_error=_handle_tool_error,
             ),
         ]
 
@@ -150,13 +163,25 @@ class ResearchToolFactory:
         )
         async with self._seen_lock:
             if call_key in self._seen_calls:
+                await self._append_event(
+                    "TOOL_FAILED",
+                    f"Tool call rejected: {tool_name}",
+                    {"tool_name": tool_name, "error_code": DuplicateToolCallError.code},
+                )
                 raise DuplicateToolCallError(f"Duplicate tool call: {tool_name}")
             self._seen_calls.add(call_key)
 
+        await self._append_event(
+            "TOOL_STARTED",
+            f"Tool started: {tool_name}",
+            {"tool_name": tool_name},
+        )
         started = perf_counter()
         try:
             result, provider, market_time, retrieved_at = await operation()
         except Exception as exc:
+            duration_ms = _duration_ms(started)
+            error_code = getattr(exc, "code", type(exc).__name__.upper())
             await self._record(
                 tool_name=tool_name,
                 arguments=arguments,
@@ -164,12 +189,22 @@ class ResearchToolFactory:
                 provider=None,
                 market_time=None,
                 retrieved_at=datetime.now(timezone.utc),
-                duration_ms=_duration_ms(started),
+                duration_ms=duration_ms,
                 success=False,
-                error_code=getattr(exc, "code", type(exc).__name__.upper()),
+                error_code=error_code,
             )
-            raise
+            await self._append_event(
+                "TOOL_FAILED",
+                f"Tool failed: {tool_name}",
+                {
+                    "tool_name": tool_name,
+                    "duration_ms": duration_ms,
+                    "error_code": error_code,
+                },
+            )
+            raise RecordedToolError(str(exc) or type(exc).__name__, error_code) from exc
 
+        duration_ms = _duration_ms(started)
         record = await self._record(
             tool_name=tool_name,
             arguments=arguments,
@@ -177,9 +212,18 @@ class ResearchToolFactory:
             provider=provider,
             market_time=market_time,
             retrieved_at=retrieved_at,
-            duration_ms=_duration_ms(started),
+            duration_ms=duration_ms,
             success=True,
             error_code=None,
+        )
+        await self._append_event(
+            "TOOL_COMPLETED",
+            f"Tool completed: {tool_name}",
+            {
+                "tool_name": tool_name,
+                "duration_ms": duration_ms,
+                "evidence_id": record.id,
+            },
         )
         return {**result, "evidence_id": record.id}
 
@@ -187,6 +231,26 @@ class ResearchToolFactory:
         record = NewToolCallRecord(run_id=self._run_id, **values)
         return await asyncio.to_thread(self._repository.record_tool_call, record)
 
+    async def _append_event(
+        self,
+        event_type: str,
+        message: str,
+        payload: dict[str, object],
+    ) -> None:
+        await asyncio.to_thread(
+            self._repository.append_event,
+            self._run_id,
+            event_type,
+            message,
+            payload,
+            False,
+        )
+
 
 def _duration_ms(started: float) -> int:
     return max(0, round((perf_counter() - started) * 1000))
+
+
+def _handle_tool_error(error: ToolException) -> str:
+    code = getattr(error, "code", type(error).__name__.upper())
+    return f"Tool error [{code}]: {error}"

@@ -2,8 +2,9 @@ import { expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 
-import AnalysisResult from '../src/components/research/AnalysisResult.vue'
 import ResearchForm from '../src/components/research/ResearchForm.vue'
+import ResearchReport from '../src/components/research/ResearchReport.vue'
+import ToolAuditTimeline from '../src/components/research/ToolAuditTimeline.vue'
 
 it('prefills a symbol supplied by navigation', () => {
   const wrapper = mount(ResearchForm, {
@@ -14,60 +15,48 @@ it('prefills a symbol supplied by navigation', () => {
   expect(wrapper.get('input').element.value).toBe('510300.SH')
 })
 
-it('renders insufficient data without directional action styling', () => {
-  const wrapper = mount(AnalysisResult, {
+it('renders Markdown and removes unsafe HTML', async () => {
+  const wrapper = mount(ResearchReport, {
     props: {
-      analysis: {
-        status: 'INSUFFICIENT_DATA',
-        market_view: 'UNCERTAIN',
-        confidence: 0,
-        horizon: '20 trading days',
-        summary: '数据不足，无法形成可靠结论。',
-        supporting_evidence: [],
-        opposing_evidence: [],
-        risks: ['行情数据不完整'],
-        invalidation_conditions: [],
-        data_cutoff: '2026-07-11T00:00:00Z',
-        model_name: 'deepseek-v4-pro',
-        prompt_version: 'research-v1',
-        symbol: '600519.SH',
-        security_name: 'Test',
-        generated_at: '2026-07-11T00:01:00Z',
-      },
+      markdown:
+        '# 研究结论\n\n- 保持谨慎\n\n<a href="https://example.com">来源</a>' +
+        '<img src=x onerror="alert(1)"><script>alert(1)</script>',
     },
   })
+  await wrapper.vm.$nextTick()
 
-  expect(wrapper.classes()).toContain('analysis-result')
-  expect(wrapper.classes()).not.toContain('is-bullish')
-  expect(wrapper.classes()).not.toContain('is-bearish')
-  expect(wrapper.text()).toContain('数据不足')
+  expect(wrapper.get('h1').text()).toBe('研究结论')
+  expect(wrapper.get('li').text()).toBe('保持谨慎')
+  expect(wrapper.html()).not.toContain('onerror')
+  expect(wrapper.html()).not.toContain('<script')
+  expect(wrapper.get('a').attributes('target')).toBe('_blank')
+  expect(wrapper.get('a').attributes('rel')).toBe('noopener noreferrer')
 })
 
-it('keeps long evidence in a wrapping evidence row', () => {
-  const statement = '这是一段很长的公告证据'.repeat(30)
-  const wrapper = mount(AnalysisResult, {
-    props: {
-      analysis: {
-        status: 'COMPLETE',
-        market_view: 'NEUTRAL',
-        confidence: 0.5,
-        horizon: '20 trading days',
-        summary: '中性',
-        supporting_evidence: [{ evidence_id: 'e-1', statement }],
-        opposing_evidence: [],
-        risks: [],
-        invalidation_conditions: [],
-        data_cutoff: '2026-07-11T00:00:00Z',
-        model_name: 'deepseek-v4-pro',
-        prompt_version: 'research-v1',
-        symbol: '600519.SH',
-        security_name: 'Test',
-        generated_at: '2026-07-11T00:01:00Z',
-      },
-    },
+it('shows a zero-tool audit message for a completed report', () => {
+  const wrapper = mount(ToolAuditTimeline, {
+    props: { phase: 'COMPLETE', events: [], toolCalls: [] },
+    global: { plugins: [ElementPlus] },
   })
 
-  const evidence = wrapper.get('[data-testid="evidence-statement"]')
-  expect(evidence.text()).toBe(statement)
-  expect(evidence.classes()).toContain('evidence-statement')
+  expect(wrapper.text()).toContain('本次报告未使用外部行情工具')
+})
+
+it('shows live tool progress while research is running', () => {
+  const wrapper = mount(ToolAuditTimeline, {
+    props: {
+      phase: 'RUNNING',
+      events: [
+        {
+          event_type: 'TOOL_STARTED',
+          message: 'Tool started: get_market_snapshot',
+          payload: { tool_name: 'get_market_snapshot' },
+        },
+      ],
+      toolCalls: [],
+    },
+    global: { plugins: [ElementPlus] },
+  })
+
+  expect(wrapper.text()).toContain('get_market_snapshot')
 })

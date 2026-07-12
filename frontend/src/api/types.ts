@@ -15,31 +15,7 @@ export type ResearchPhase =
   | 'CREATING'
   | 'RUNNING'
   | 'COMPLETE'
-  | 'INSUFFICIENT_DATA'
   | 'FAILED'
-
-export interface EvidenceItem {
-  evidence_id: string
-  statement: string
-}
-
-export interface ResearchAnalysis {
-  status: 'COMPLETE' | 'INSUFFICIENT_DATA' | 'FAILED'
-  symbol: string
-  security_name: string
-  market_view: 'BULLISH' | 'NEUTRAL' | 'BEARISH' | 'UNCERTAIN'
-  horizon: string
-  confidence: number
-  summary: string
-  supporting_evidence: EvidenceItem[]
-  opposing_evidence: EvidenceItem[]
-  risks: string[]
-  invalidation_conditions: string[]
-  data_cutoff: string
-  generated_at: string
-  model_name: string
-  prompt_version: string
-}
 
 export interface ResearchRunAccepted {
   run_id: string
@@ -84,7 +60,7 @@ export interface ResearchRunDetail {
   data_cutoff?: string | null
   error_code?: string | null
   error_message?: string | null
-  result: { full_result: ResearchAnalysis } | null
+  result: { id: string; run_id: string; report_markdown: string; created_at: string } | null
   events: ResearchEvent[]
   tool_calls: ToolCallRecord[]
 }
@@ -141,13 +117,10 @@ export interface WatchlistItem {
 
 export interface ResearchRunSummary {
   id: string
+  user_query: string
   symbol: string
   status: string
   model_name: string
   started_at: string
   finished_at?: string | null
-  market_view: string | null
-  confidence: number | null
-  horizon: string | null
-  summary: string | null
 }

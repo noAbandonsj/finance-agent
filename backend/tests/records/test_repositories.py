@@ -11,7 +11,6 @@ from alembic import command
 from alembic.config import Config
 from pydantic import ValidationError
 from sqlalchemy import event
-from sqlalchemy.exc import StatementError
 
 from ai_finance.records.database import Database
 from ai_finance.records.models import CompletedAnalysisRecord, NewToolCallRecord
@@ -49,21 +48,8 @@ def create_run(repository: AnalysisRepository):
     )
 
 
-def make_completed_result(
-    data_cutoff: datetime, full_result: dict[str, object] | None = None
-) -> CompletedAnalysisRecord:
-    return CompletedAnalysisRecord(
-        market_view="BULLISH",
-        horizon="20 trading days",
-        confidence=0.74,
-        summary="Momentum is positive.",
-        supporting_evidence=[{"evidence_id": "evidence-1", "statement": "Positive return"}],
-        opposing_evidence=[{"evidence_id": "evidence-2", "statement": "Elevated volatility"}],
-        risks=["Policy change"],
-        invalidation_conditions=["Close below the 20-day average"],
-        full_result=full_result or {"status": "COMPLETE", "symbol": "600519.SH"},
-        data_cutoff=data_cutoff,
-    )
+def make_completed_result() -> CompletedAnalysisRecord:
+    return CompletedAnalysisRecord(report_markdown="# Research report\n\nMomentum is positive.")
 
 
 def make_tool_call(
@@ -196,9 +182,9 @@ def test_tool_record_returns_generated_evidence_id_and_can_be_listed(
     assert listed_tool_calls[0].result == {"last": 1500.0}
 
 
-def test_completed_analysis_requires_aware_data_cutoff() -> None:
-    with pytest.raises(ValidationError, match="timezone_aware"):
-        make_completed_result(datetime(2026, 7, 10, 15, 0))
+def test_completed_analysis_requires_non_empty_report() -> None:
+    with pytest.raises(ValidationError, match="at least 1 character"):
+        CompletedAnalysisRecord(report_markdown="")
 
 
 def test_new_tool_call_requires_aware_market_time() -> None:
@@ -228,12 +214,11 @@ def test_asia_shanghai_inputs_round_trip_as_same_utc_instants(
     shanghai = ZoneInfo("Asia/Shanghai")
     market_time = datetime(2026, 7, 10, 15, 0, tzinfo=shanghai)
     retrieved_at = datetime(2026, 7, 10, 15, 0, 1, tzinfo=shanghai)
-    data_cutoff = datetime(2026, 7, 10, 15, 30, tzinfo=shanghai)
 
     saved_tool_call = analysis_repository.record_tool_call(
         make_tool_call(run.id, market_time, retrieved_at)
     )
-    completed_run = analysis_repository.complete_run(run.id, make_completed_result(data_cutoff))
+    completed_run = analysis_repository.complete_run(run.id, make_completed_result())
     reloaded_tool_call = analysis_repository.list_tool_calls(run.id)[0]
     detail = analysis_repository.get_run(run.id)
 
@@ -241,8 +226,8 @@ def test_asia_shanghai_inputs_round_trip_as_same_utc_instants(
     assert saved_tool_call.retrieved_at == retrieved_at.astimezone(timezone.utc)
     assert reloaded_tool_call.market_time == market_time.astimezone(timezone.utc)
     assert reloaded_tool_call.retrieved_at == retrieved_at.astimezone(timezone.utc)
-    assert completed_run.data_cutoff == data_cutoff.astimezone(timezone.utc)
-    assert detail.data_cutoff == data_cutoff.astimezone(timezone.utc)
+    assert completed_run.data_cutoff == market_time.astimezone(timezone.utc)
+    assert detail.data_cutoff == market_time.astimezone(timezone.utc)
     assert reloaded_tool_call.market_time is not None
     assert reloaded_tool_call.market_time.tzinfo is timezone.utc
     assert reloaded_tool_call.retrieved_at.tzinfo is timezone.utc
@@ -257,7 +242,10 @@ def test_completing_run_persists_result_and_complete_status_atomically(
 ) -> None:
     run = create_run(analysis_repository)
     data_cutoff = datetime(2026, 7, 10, 7, 0, tzinfo=timezone.utc)
-    completed_result = make_completed_result(data_cutoff)
+    analysis_repository.record_tool_call(
+        make_tool_call(run.id, data_cutoff, data_cutoff)
+    )
+    completed_result = make_completed_result()
 
     completed_run = analysis_repository.complete_run(run.id, completed_result)
     detail = analysis_repository.get_run(run.id)
@@ -268,31 +256,20 @@ def test_completing_run_persists_result_and_complete_status_atomically(
     assert completed_run.data_cutoff == data_cutoff
     assert detail.status == "COMPLETE"
     assert detail.result is not None
-    assert detail.result.market_view == "BULLISH"
-    assert detail.result.supporting_evidence == completed_result.supporting_evidence
-    assert detail.result.opposing_evidence == completed_result.opposing_evidence
-    assert detail.result.risks == completed_result.risks
-    assert detail.result.invalidation_conditions == completed_result.invalidation_conditions
-    assert detail.result.full_result == completed_result.full_result
+    assert detail.result.report_markdown == completed_result.report_markdown
 
 
-def test_completing_run_rolls_back_status_when_result_cannot_be_persisted(
+def test_completing_run_without_tools_keeps_data_cutoff_null(
     analysis_repository: AnalysisRepository,
 ) -> None:
     run = create_run(analysis_repository)
-    invalid_result = make_completed_result(
-        datetime(2026, 7, 10, 7, 0, tzinfo=timezone.utc),
-        full_result={"not_json_serializable": object()},
-    )
-
-    with pytest.raises(StatementError, match="not JSON serializable"):
-        analysis_repository.complete_run(run.id, invalid_result)
+    analysis_repository.complete_run(run.id, make_completed_result())
 
     detail = analysis_repository.get_run(run.id)
-    assert detail.status == "RUNNING"
-    assert detail.finished_at is None
+    assert detail.status == "COMPLETE"
+    assert detail.finished_at is not None
     assert detail.data_cutoff is None
-    assert detail.result is None
+    assert detail.result is not None
 
 
 def test_failing_run_records_typed_error_and_history_is_paginated(

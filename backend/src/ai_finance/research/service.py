@@ -7,17 +7,15 @@ from uuid import uuid4
 from langchain_core.tools import BaseTool
 
 from ai_finance.ai.prompt import PROMPT_VERSION
-from ai_finance.ai.schemas import ResearchAnalysis
 from ai_finance.ai.tools import ResearchToolFactory
 from ai_finance.analytics.service import MarketMetricsService
 from ai_finance.market.service import MarketDataService
-from ai_finance.records.models import AnalysisRunRecord
+from ai_finance.records.models import AnalysisRunRecord, CompletedAnalysisRecord
 from ai_finance.records.repositories import AnalysisRepository
-from ai_finance.research.validator import AnalysisRecordMapper, EvidenceValidator
 
 
 class ResearchRunner(Protocol):
-    async def run(self, user_query: str, thread_id: str) -> ResearchAnalysis: ...
+    async def run(self, user_query: str, thread_id: str) -> str: ...
 
 
 RunnerFactory = Callable[[Sequence[BaseTool]], AbstractAsyncContextManager[ResearchRunner]]
@@ -54,7 +52,6 @@ class ResearchService:
         self._runner_factory = runner_factory
         self._model_name = model_name
         self._prompt_version = prompt_version
-        self._validator = EvidenceValidator(analysis_repository)
 
     async def start(self, user_query: str, symbol: str) -> AnalysisRunRecord:
         thread_id = str(uuid4())
@@ -95,7 +92,11 @@ class ResearchService:
 
         try:
             async with self._runner_factory(tools) as runner:
-                analysis = await runner.run(run.user_query, run.thread_id)
+                agent_query = (
+                    f"Security symbol: {run.symbol}\n\n"
+                    f"Research question: {run.user_query}"
+                )
+                report = await runner.run(agent_query, run.thread_id)
             await asyncio.to_thread(
                 self._repository.append_event,
                 run_id,
@@ -104,15 +105,17 @@ class ResearchService:
                 {},
                 False,
             )
-            validated = await asyncio.to_thread(self._validator.validate, run_id, analysis)
-            record = AnalysisRecordMapper.to_record(validated)
-            await asyncio.to_thread(self._repository.complete_run, run_id, record)
+            await asyncio.to_thread(
+                self._repository.complete_run,
+                run_id,
+                CompletedAnalysisRecord(report_markdown=report),
+            )
             await asyncio.to_thread(
                 self._repository.append_event,
                 run_id,
                 "RUN_COMPLETED",
                 "Research run completed",
-                {"status": validated.status.value},
+                {"status": "COMPLETE"},
                 True,
             )
         except Exception as exc:

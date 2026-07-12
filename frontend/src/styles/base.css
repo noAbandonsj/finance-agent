@@ -721,6 +721,147 @@ p {
   letter-spacing: 0.02em;
 }
 
+.research-report {
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--brand);
+  background: var(--surface);
+}
+
+.research-report-body {
+  padding: 24px;
+  color: #2a302d;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.research-report-body > :first-child {
+  margin-top: 0;
+}
+
+.research-report-body > :last-child {
+  margin-bottom: 0;
+}
+
+.research-report-body h1,
+.research-report-body h2,
+.research-report-body h3 {
+  margin: 1.4em 0 0.55em;
+  color: var(--ink);
+  font-family: var(--font-display);
+  line-height: 1.35;
+}
+
+.research-report-body h1 {
+  font-size: 24px;
+}
+
+.research-report-body h2 {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 18px;
+}
+
+.research-report-body h3 {
+  font-size: 15px;
+}
+
+.research-report-body pre {
+  max-width: 100%;
+  padding: 14px;
+  overflow: auto;
+  background: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.research-report-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.research-report-body th,
+.research-report-body td {
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  text-align: left;
+}
+
+.research-report-body a {
+  color: var(--brand);
+}
+
+.tool-audit {
+  margin-top: 16px;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.tool-audit .section-label {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tool-live-events,
+.tool-audit-empty {
+  margin: 0;
+  padding: 14px 16px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.tool-call-list {
+  border: 0;
+}
+
+.tool-call-title.is-error,
+.tool-live-events .is-error {
+  color: var(--down);
+}
+
+.tool-call-meta {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0 0 14px;
+  font-size: 12px;
+}
+
+.tool-call-meta dt {
+  color: var(--ink-faint);
+}
+
+.tool-call-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-audit h4 {
+  margin: 12px 0 6px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tool-audit pre {
+  max-height: 280px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  background: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.history-result {
+  min-width: 0;
+}
+
 .research-error {
   margin-top: 12px;
 }

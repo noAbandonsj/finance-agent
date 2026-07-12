@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineProps<{
   phase: string
-  events: Array<{ event_type: string; message: string }>
+  events: Array<{ event_type: string; message: string; payload?: Record<string, unknown> | null }>
 }>()
 </script>
 

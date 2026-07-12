@@ -22,13 +22,7 @@ function formatTime(value: string): string {
     </el-table-column>
     <el-table-column prop="symbol" label="标的" min-width="110" />
     <el-table-column prop="status" label="状态" min-width="100" />
-    <el-table-column prop="market_view" label="观点" min-width="90" />
-    <el-table-column label="置信度" min-width="90">
-      <template #default="scope">
-        {{ scope.row.confidence == null ? '-' : `${Math.round(scope.row.confidence * 100)}%` }}
-      </template>
-    </el-table-column>
-    <el-table-column prop="horizon" label="周期" min-width="130" />
+    <el-table-column prop="user_query" label="研究问题" min-width="220" show-overflow-tooltip />
     <el-table-column prop="model_name" label="模型" min-width="160" show-overflow-tooltip />
   </el-table>
 </template>

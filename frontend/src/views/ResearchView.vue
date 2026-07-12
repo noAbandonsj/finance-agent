@@ -2,11 +2,12 @@
 import { computed, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 
-import AnalysisResult from '@/components/research/AnalysisResult.vue'
 import MetricsStrip from '@/components/research/MetricsStrip.vue'
 import PriceChart from '@/components/research/PriceChart.vue'
 import ResearchForm from '@/components/research/ResearchForm.vue'
 import ResearchProgress from '@/components/research/ResearchProgress.vue'
+import ResearchReport from '@/components/research/ResearchReport.vue'
+import ToolAuditTimeline from '@/components/research/ToolAuditTimeline.vue'
 import { useResearchStore } from '@/stores/research'
 import { useSystemStore } from '@/stores/system'
 
@@ -64,7 +65,7 @@ onBeforeUnmount(() => research.dispose())
       </section>
 
       <section class="research-analysis-pane">
-        <AnalysisResult v-if="research.analysis" :analysis="research.analysis" />
+        <ResearchReport v-if="research.report" :markdown="research.report" />
         <div v-else class="analysis-empty">
           <span>等待研究任务</span>
         </div>
@@ -75,6 +76,11 @@ onBeforeUnmount(() => research.dispose())
           :title="research.error"
           :closable="false"
           show-icon
+        />
+        <ToolAuditTimeline
+          :phase="research.phase"
+          :events="research.events"
+          :tool-calls="research.detail?.tool_calls ?? []"
         />
       </section>
     </div>

@@ -6,7 +6,6 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
-    Float,
     ForeignKey,
     Index,
     Integer,
@@ -98,15 +97,7 @@ class AnalysisResultRow(Base):
         ForeignKey("analysis_run.id", ondelete="CASCADE", name="fk_analysis_result_run_id"),
         nullable=False,
     )
-    market_view: Mapped[str] = mapped_column(String(32), nullable=False)
-    horizon: Mapped[str] = mapped_column(String(128), nullable=False)
-    confidence: Mapped[float] = mapped_column(Float, nullable=False)
-    summary: Mapped[str] = mapped_column(Text, nullable=False)
-    supporting_evidence_json: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False)
-    opposing_evidence_json: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False)
-    risks_json: Mapped[list[str]] = mapped_column(JSON, nullable=False)
-    invalidation_conditions_json: Mapped[list[str]] = mapped_column(JSON, nullable=False)
-    full_result_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    report_markdown: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -125,16 +116,7 @@ class FrozenRecord(BaseModel):
 
 
 class CompletedAnalysisRecord(FrozenRecord):
-    market_view: str
-    horizon: str
-    confidence: float
-    summary: str
-    supporting_evidence: list[dict[str, str]]
-    opposing_evidence: list[dict[str, str]]
-    risks: list[str]
-    invalidation_conditions: list[str]
-    full_result: dict[str, object]
-    data_cutoff: AwareDatetime
+    report_markdown: str = Field(min_length=1)
 
 
 class AnalysisRunRecord(FrozenRecord):
@@ -183,23 +165,12 @@ class ToolCallRecord(NewToolCallRecord):
 class AnalysisResultRecord(FrozenRecord):
     id: str
     run_id: str
-    market_view: str
-    horizon: str
-    confidence: float
-    summary: str
-    supporting_evidence: list[dict[str, str]]
-    opposing_evidence: list[dict[str, str]]
-    risks: list[str]
-    invalidation_conditions: list[str]
-    full_result: dict[str, object]
+    report_markdown: str
     created_at: datetime
 
 
 class AnalysisRunSummary(AnalysisRunRecord):
-    market_view: str | None = None
-    horizon: str | None = None
-    confidence: float | None = None
-    summary: str | None = None
+    pass
 
 
 class AnalysisRunDetail(AnalysisRunRecord):

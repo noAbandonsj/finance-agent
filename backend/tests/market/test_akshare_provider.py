@@ -123,6 +123,50 @@ class FakeAkshare:
         self.history_arguments["etf"] = kwargs
         return _history_frame().copy()
 
+    def stock_zh_a_daily(self, **kwargs: Any) -> pd.DataFrame:
+        self.calls["stock_daily"] += 1
+        self.history_arguments["stock_daily"] = kwargs
+        return pd.DataFrame(
+            [
+                {
+                    "date": datetime(2026, 1, 9),
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.5,
+                    "close": 10.5,
+                    "volume": 1000,
+                    "amount": 10000,
+                },
+                {
+                    "date": datetime(2026, 1, 10),
+                    "open": 11.0,
+                    "high": 12.0,
+                    "low": 10.5,
+                    "close": 11.5,
+                    "volume": 2000,
+                    "amount": 20000,
+                },
+            ]
+        )
+
+    def fund_etf_hist_sina(self, **kwargs: Any) -> pd.DataFrame:
+        self.calls["etf_history_sina"] += 1
+        return self.stock_zh_a_daily(**kwargs)
+
+    def fund_etf_spot_ths(self, **kwargs: Any) -> pd.DataFrame:
+        self.calls["etf_spot_ths"] += 1
+        return pd.DataFrame(
+            [
+                {
+                    "基金代码": "510300",
+                    "基金名称": "沪深300ETF",
+                    "当前-单位净值": 3.912,
+                    "前一日-单位净值": 3.9,
+                    "增长率": 0.31,
+                }
+            ]
+        )
+
 
 def _provider(
     client: FakeAkshare,
@@ -195,6 +239,47 @@ def test_etf_snapshot_uses_etf_column_names() -> None:
     assert snapshot.open == 3.89
     assert snapshot.high == 3.93
     assert snapshot.low == 3.88
+
+
+def test_direct_sources_use_sina_stock_history_for_snapshot_and_bars() -> None:
+    client = FakeAkshare()
+    provider = AkshareMarketDataProvider(
+        client,
+        direct_symbol_sources=True,
+        sleeper=lambda _seconds: None,
+        now=lambda: FIXED_NOW,
+    )
+
+    snapshot = provider.get_market_snapshot("600519")
+    bars = provider.get_daily_bars("600519", 2)
+
+    assert snapshot.last == 11.5
+    assert snapshot.previous_close == 10.5
+    assert snapshot.provider == "akshare:sina"
+    assert [bar.close for bar in bars] == [10.5, 11.5]
+    assert all(bar.provider == "akshare:sina" for bar in bars)
+    assert client.calls["stock_spot"] == 0
+    assert client.calls["etf_spot"] == 0
+    assert client.calls["etf_spot_ths"] == 1
+
+
+def test_direct_sources_use_ths_etf_identity_and_sina_history() -> None:
+    client = FakeAkshare()
+    provider = AkshareMarketDataProvider(
+        client,
+        direct_symbol_sources=True,
+        sleeper=lambda _seconds: None,
+        now=lambda: FIXED_NOW,
+    )
+
+    snapshot = provider.get_market_snapshot("510300")
+    bars = provider.get_daily_bars("510300", 1)
+
+    assert snapshot.name == "沪深300ETF"
+    assert snapshot.last == 3.912
+    assert snapshot.provider == "akshare:ths"
+    assert bars[-1].provider == "akshare:sina"
+    assert client.calls["etf_history_sina"] == 1
 
 
 def test_spot_tables_are_cached_together_for_30_seconds() -> None:

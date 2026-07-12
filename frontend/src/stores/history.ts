@@ -8,16 +8,11 @@ export const useHistoryStore = defineStore('history', () => {
   const runs = ref<ResearchRunSummary[]>([])
   const selected = ref<ResearchRunDetail | null>(null)
   const statusFilter = ref('ALL')
-  const viewFilter = ref('ALL')
   const loading = ref(false)
   const error = ref<string | null>(null)
 
   const filteredRuns = computed(() =>
-    runs.value.filter(
-      (run) =>
-        (statusFilter.value === 'ALL' || run.status === statusFilter.value) &&
-        (viewFilter.value === 'ALL' || run.market_view === viewFilter.value),
-    ),
+    runs.value.filter((run) => statusFilter.value === 'ALL' || run.status === statusFilter.value),
   )
 
   async function load(): Promise<void> {
@@ -40,7 +35,6 @@ export const useHistoryStore = defineStore('history', () => {
     runs,
     selected,
     statusFilter,
-    viewFilter,
     loading,
     error,
     filteredRuns,

@@ -86,15 +86,7 @@ def upgrade() -> None:
         "analysis_result",
         sa.Column("id", sa.String(length=36), nullable=False),
         sa.Column("run_id", sa.String(length=36), nullable=False),
-        sa.Column("market_view", sa.String(length=32), nullable=False),
-        sa.Column("horizon", sa.String(length=128), nullable=False),
-        sa.Column("confidence", sa.Float(), nullable=False),
-        sa.Column("summary", sa.Text(), nullable=False),
-        sa.Column("supporting_evidence_json", sa.JSON(), nullable=False),
-        sa.Column("opposing_evidence_json", sa.JSON(), nullable=False),
-        sa.Column("risks_json", sa.JSON(), nullable=False),
-        sa.Column("invalidation_conditions_json", sa.JSON(), nullable=False),
-        sa.Column("full_result_json", sa.JSON(), nullable=False),
+        sa.Column("report_markdown", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
             ["run_id"], ["analysis_run.id"], name="fk_analysis_result_run_id", ondelete="CASCADE"

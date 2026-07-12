@@ -1,19 +1,16 @@
-import os
-
 import pytest
 from langchain.agents import create_agent
-from langchain.agents.structured_output import ToolStrategy
 from langchain_core.tools import tool
 
 from ai_finance.ai.model_gateway import ModelGateway
-from ai_finance.ai.schemas import ResearchAnalysis
 from ai_finance.settings import Settings
 
 
 @pytest.mark.live
 @pytest.mark.asyncio
-async def test_deepseek_calls_tool_and_returns_structured_research() -> None:
-    if not os.getenv("DEEPSEEK_API_KEY"):
+async def test_deepseek_calls_tool_and_returns_markdown_research() -> None:
+    settings = Settings()
+    if not settings.model_configured:
         pytest.skip("DEEPSEEK_API_KEY is not configured")
 
     tool_called = False
@@ -28,16 +25,13 @@ async def test_deepseek_calls_tool_and_returns_structured_research() -> None:
             "statement": "The synthetic instrument price is 100 at 2026-07-11T00:00:00Z.",
         }
 
-    settings = Settings()
     agent = create_agent(
         model=ModelGateway(settings).create(settings.deepseek_default_model),
         tools=[get_test_evidence],
         system_prompt=(
             "Call get_test_evidence exactly once. Analyze only that synthetic evidence. "
-            "Return COMPLETE, NEUTRAL, UTC timestamps, model_name matching the configured "
-            "model, prompt_version smoke-v1, and cite test-evidence-1."
+            "Then return a concise Markdown report that cites test-evidence-1."
         ),
-        response_format=ToolStrategy(ResearchAnalysis),
     )
 
     result = await agent.ainvoke(
@@ -46,4 +40,5 @@ async def test_deepseek_calls_tool_and_returns_structured_research() -> None:
     )
 
     assert tool_called is True
-    assert ResearchAnalysis.model_validate(result["structured_response"])
+    assert result["messages"][-1].content
+    assert "test-evidence-1" in result["messages"][-1].content

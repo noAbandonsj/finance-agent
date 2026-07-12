@@ -2,7 +2,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, inspect, text
+from sqlalchemy import Boolean, DateTime, Integer, JSON, String, Text, inspect, text
 
 from ai_finance.records.database import Database
 
@@ -87,15 +87,7 @@ def test_initial_migration_has_required_columns_constraints_and_indexes(tmp_path
             "analysis_result": {
                 "id",
                 "run_id",
-                "market_view",
-                "horizon",
-                "confidence",
-                "summary",
-                "supporting_evidence_json",
-                "opposing_evidence_json",
-                "risks_json",
-                "invalidation_conditions_json",
-                "full_result_json",
+                "report_markdown",
                 "created_at",
             },
             "watchlist_item": {
@@ -127,9 +119,8 @@ def test_initial_migration_has_required_columns_constraints_and_indexes(tmp_path
         assert isinstance(columns["tool_call_record"]["duration_ms"]["type"], Integer)
         assert columns["tool_call_record"]["result_json"]["nullable"] is True
         assert isinstance(columns["tool_call_record"]["success"]["type"], Boolean)
-        assert isinstance(columns["analysis_result"]["confidence"]["type"], Float)
-        assert isinstance(columns["analysis_result"]["full_result_json"]["type"], JSON)
-        assert columns["analysis_result"]["full_result_json"]["nullable"] is False
+        assert isinstance(columns["analysis_result"]["report_markdown"]["type"], Text)
+        assert columns["analysis_result"]["report_markdown"]["nullable"] is False
         assert columns["watchlist_item"]["note"]["nullable"] is True
 
         expected_primary_keys = {

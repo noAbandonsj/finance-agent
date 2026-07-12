@@ -5,14 +5,12 @@ from datetime import date, datetime, timezone
 import pytest
 from langchain_core.tools import BaseTool
 
-from ai_finance.ai.schemas import AnalysisStatus, EvidenceItem, MarketView, ResearchAnalysis
 from ai_finance.analytics.service import MarketMetricsService
 from ai_finance.market.models import DailyBar, MarketSnapshot, SecurityProfile, SecurityType
 from ai_finance.records.database import Database
-from ai_finance.records.models import Base, NewToolCallRecord
+from ai_finance.records.models import Base
 from ai_finance.records.repositories import AnalysisRepository
 from ai_finance.research.service import ResearchService
-from ai_finance.research.validator import EvidenceValidationError, EvidenceValidator
 
 
 class FixedMarketService:
@@ -62,53 +60,38 @@ class FixedMarketService:
         ]
 
 
-class ToolCallingRunner:
-    def __init__(self, tools: Sequence[BaseTool]) -> None:
+class FixedRunner:
+    def __init__(self, tools: Sequence[BaseTool], *, use_tools: bool) -> None:
         self._tools = {tool.name: tool for tool in tools}
+        self._use_tools = use_tools
 
-    async def run(self, user_query: str, thread_id: str) -> ResearchAnalysis:
-        snapshot = await self._tools["get_market_snapshot"].ainvoke({"symbol": "600519"})
-        metrics = await self._tools["calculate_market_metrics"].ainvoke(
-            {"symbol": "600519", "trading_days": 10}
-        )
-        return make_analysis(snapshot["evidence_id"], metrics["evidence_id"])
+    async def run(self, user_query: str, thread_id: str) -> str:
+        assert "Security symbol: 600519.SH" in user_query
+        if self._use_tools:
+            await self._tools["get_market_snapshot"].ainvoke({"symbol": "600519"})
+            await self._tools["calculate_market_metrics"].ainvoke(
+                {"symbol": "600519", "trading_days": 10}
+            )
+        return "# 研究报告\n\n结论保持中性。"
 
 
 class FailingRunner:
-    async def run(self, user_query: str, thread_id: str) -> ResearchAnalysis:
+    async def run(self, user_query: str, thread_id: str) -> str:
         raise RuntimeError("synthetic model failure")
 
 
-def runner_factory(fail: bool = False):
+def runner_factory(*, fail: bool = False, use_tools: bool = True):
     @asynccontextmanager
     async def factory(tools: Sequence[BaseTool]) -> AsyncIterator[object]:
-        yield FailingRunner() if fail else ToolCallingRunner(tools)
+        if fail:
+            yield FailingRunner()
+        else:
+            yield FixedRunner(tools, use_tools=use_tools)
 
     return factory
 
 
-def make_analysis(snapshot_id: str, metrics_id: str) -> ResearchAnalysis:
-    now = datetime(2026, 7, 11, tzinfo=timezone.utc)
-    return ResearchAnalysis(
-        status=AnalysisStatus.COMPLETE,
-        symbol="600519.SH",
-        security_name="Kweichow Moutai",
-        market_view=MarketView.NEUTRAL,
-        horizon="20 trading days",
-        confidence=0.6,
-        summary="Balanced.",
-        supporting_evidence=[EvidenceItem(evidence_id=snapshot_id, statement="price")],
-        opposing_evidence=[EvidenceItem(evidence_id=metrics_id, statement="risk")],
-        risks=["volatility"],
-        invalidation_conditions=["trend changes"],
-        data_cutoff=now,
-        generated_at=now,
-        model_name="test-model",
-        prompt_version="research-v1",
-    )
-
-
-def make_service(tmp_path, *, fail: bool = False):
+def make_service(tmp_path, *, fail: bool = False, use_tools: bool = True):
     database = Database(f"sqlite:///{tmp_path / 'app.db'}")
     Base.metadata.create_all(database.engine)
     repository = AnalysisRepository(database)
@@ -116,15 +99,15 @@ def make_service(tmp_path, *, fail: bool = False):
         analysis_repository=repository,
         market_service=FixedMarketService(),
         metrics_service=MarketMetricsService(),
-        runner_factory=runner_factory(fail),
+        runner_factory=runner_factory(fail=fail, use_tools=use_tools),
         model_name="test-model",
-        prompt_version="research-v1",
+        prompt_version="research-v2",
     )
     return service, repository
 
 
 @pytest.mark.asyncio
-async def test_run_records_ordered_progress_and_completion(tmp_path) -> None:
+async def test_run_records_tool_progress_report_and_completion(tmp_path) -> None:
     service, repository = make_service(tmp_path)
     run = await service.start("analyze", "600519")
 
@@ -135,12 +118,31 @@ async def test_run_records_ordered_progress_and_completion(tmp_path) -> None:
     assert [event.event_type for event in detail.events] == [
         "RUN_CREATED",
         "AGENT_STARTED",
+        "TOOL_STARTED",
+        "TOOL_COMPLETED",
+        "TOOL_STARTED",
+        "TOOL_COMPLETED",
         "AGENT_COMPLETED",
         "RUN_COMPLETED",
     ]
     assert detail.events[-1].terminal is True
     assert detail.result is not None
-    assert detail.result.market_view == "NEUTRAL"
+    assert detail.result.report_markdown.startswith("# 研究报告")
+    assert detail.data_cutoff == datetime(2026, 7, 11, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_run_can_complete_without_tools_or_data_cutoff(tmp_path) -> None:
+    service, repository = make_service(tmp_path, use_tools=False)
+    run = await service.start("explain the methodology", "600519")
+
+    await service.execute(run.id)
+
+    detail = repository.get_run(run.id)
+    assert detail.status == "COMPLETE"
+    assert detail.data_cutoff is None
+    assert detail.tool_calls == []
+    assert detail.result is not None
 
 
 @pytest.mark.asyncio
@@ -156,89 +158,3 @@ async def test_runner_failure_is_persisted_as_terminal_event(tmp_path) -> None:
     assert detail.error_message == "synthetic model failure"
     assert detail.events[-1].event_type == "RUN_FAILED"
     assert detail.events[-1].terminal is True
-
-
-def test_validator_rejects_evidence_from_another_run(tmp_path) -> None:
-    _service, repository = make_service(tmp_path)
-    first = repository.create_run("one", "600519", "m", "p", "t1")
-    second = repository.create_run("two", "600519", "m", "p", "t2")
-    foreign = repository.record_tool_call(
-        NewToolCallRecord(
-            run_id=first.id,
-            tool_name="get_market_snapshot",
-            arguments={},
-            result={},
-            provider="test",
-            market_time=datetime(2026, 7, 11, tzinfo=timezone.utc),
-            retrieved_at=datetime(2026, 7, 11, tzinfo=timezone.utc),
-            duration_ms=1,
-            success=True,
-        )
-    )
-    analysis = make_analysis(foreign.id, foreign.id)
-
-    with pytest.raises(EvidenceValidationError):
-        EvidenceValidator(repository).validate(second.id, analysis)
-
-
-def test_missing_required_market_tools_becomes_insufficient_data(tmp_path) -> None:
-    _service, repository = make_service(tmp_path)
-    run = repository.create_run("one", "600519", "m", "p", "t1")
-    profile = repository.record_tool_call(
-        NewToolCallRecord(
-            run_id=run.id,
-            tool_name="get_security_profile",
-            arguments={},
-            result={},
-            provider="test",
-            market_time=None,
-            retrieved_at=datetime(2026, 7, 11, tzinfo=timezone.utc),
-            duration_ms=1,
-            success=True,
-        )
-    )
-
-    validated = EvidenceValidator(repository).validate(
-        run.id, make_analysis(profile.id, profile.id)
-    )
-
-    assert validated.status is AnalysisStatus.INSUFFICIENT_DATA
-    assert validated.market_view is MarketView.UNCERTAIN
-
-
-def test_uncited_required_market_tools_become_insufficient_data(tmp_path) -> None:
-    _service, repository = make_service(tmp_path)
-    run = repository.create_run("one", "600519", "m", "p", "t1")
-    profile = repository.record_tool_call(
-        NewToolCallRecord(
-            run_id=run.id,
-            tool_name="get_security_profile",
-            arguments={},
-            result={},
-            provider="test",
-            market_time=None,
-            retrieved_at=datetime(2026, 7, 11, tzinfo=timezone.utc),
-            duration_ms=1,
-            success=True,
-        )
-    )
-    for name in ("get_market_snapshot", "calculate_market_metrics"):
-        repository.record_tool_call(
-            NewToolCallRecord(
-                run_id=run.id,
-                tool_name=name,
-                arguments={},
-                result={},
-                provider="test",
-                market_time=datetime(2026, 7, 11, tzinfo=timezone.utc),
-                retrieved_at=datetime(2026, 7, 11, tzinfo=timezone.utc),
-                duration_ms=1,
-                success=True,
-            )
-        )
-
-    validated = EvidenceValidator(repository).validate(
-        run.id, make_analysis(profile.id, profile.id)
-    )
-
-    assert validated.status is AnalysisStatus.INSUFFICIENT_DATA

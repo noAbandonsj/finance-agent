@@ -1,9 +1,9 @@
 # AI Finance Desk
 
 AI Finance Desk is a local personal financial research application. A LangChain agent backed by
-DeepSeek can call real AKShare market tools, calculate deterministic metrics, and save every piece
-of cited evidence. The Vue interface provides research, watchlist, history, and runtime status
-views.
+DeepSeek autonomously chooses AKShare market tools and writes a Markdown research report. Every
+tool call, result, data timestamp, and failure is retained for audit. The Vue interface provides
+research, watchlist, history, and runtime status views.
 
 The current milestone is read-only. It cannot create brokerage orders or move real funds.
 
@@ -75,7 +75,10 @@ provider pricing.
 ## Scope
 
 Supported now: A-share stocks and exchange-traded funds, latest snapshots, daily price history,
-deterministic metrics, AI research, evidence audit, watchlist, and history restoration.
+deterministic metrics, AI Markdown research, tool audit, watchlist, and history restoration.
 
 Not implemented: portfolio accounting, paper orders, broker connectivity, executable orders,
 automatic trading, authentication, or remote deployment.
+
+Future trading tools must remain behind deterministic risk checks and an approval or policy gate.
+Natural-language model output must never bypass structured order parameters and execution audit.

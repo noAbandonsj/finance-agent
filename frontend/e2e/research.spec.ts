@@ -29,11 +29,11 @@ test('research, chart, history, and watchlist remain usable', async ({ page }) =
   await expect(page.getByText('510300.SH')).toBeVisible()
 })
 
-test('insufficient data stays visually non-directional', async ({ page }) => {
+test('a natural language data limitation is rendered as a report', async ({ page }) => {
   await page.goto('/research')
   await page.getByPlaceholder('证券代码，如 600519').fill('510300')
   await page.getByRole('button', { name: '开始研究' }).click()
 
   await expect(page.getByText('数据不足，暂不形成方向判断。')).toBeVisible()
-  await expect(page.locator('.analysis-result')).not.toHaveClass(/is-bullish|is-bearish/)
+  await expect(page.locator('.research-report')).toBeVisible()
 })

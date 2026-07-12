@@ -6,7 +6,6 @@ from datetime import date, datetime, timezone
 from fastapi.testclient import TestClient
 from langchain_core.tools import BaseTool
 
-from ai_finance.ai.schemas import AnalysisStatus, EvidenceItem, MarketView, ResearchAnalysis
 from ai_finance.api.app import create_app
 from ai_finance.api.container import AppContainer
 from ai_finance.market.models import DailyBar, MarketSnapshot, SecurityProfile, SecurityType
@@ -66,29 +65,12 @@ class FixedRunner:
     def __init__(self, tools: Sequence[BaseTool]) -> None:
         self._tools = {tool.name: tool for tool in tools}
 
-    async def run(self, user_query: str, thread_id: str) -> ResearchAnalysis:
-        snapshot = await self._tools["get_market_snapshot"].ainvoke({"symbol": "600519"})
-        metrics = await self._tools["calculate_market_metrics"].ainvoke(
+    async def run(self, user_query: str, thread_id: str) -> str:
+        await self._tools["get_market_snapshot"].ainvoke({"symbol": "600519"})
+        await self._tools["calculate_market_metrics"].ainvoke(
             {"symbol": "600519", "trading_days": 10}
         )
-        now = datetime(2026, 7, 11, tzinfo=timezone.utc)
-        return ResearchAnalysis(
-            status=AnalysisStatus.COMPLETE,
-            symbol="600519.SH",
-            security_name="Test Security",
-            market_view=MarketView.NEUTRAL,
-            horizon="20 trading days",
-            confidence=0.5,
-            summary="Balanced.",
-            supporting_evidence=[EvidenceItem(evidence_id=snapshot["evidence_id"], statement="p")],
-            opposing_evidence=[EvidenceItem(evidence_id=metrics["evidence_id"], statement="r")],
-            risks=[],
-            invalidation_conditions=[],
-            data_cutoff=now,
-            generated_at=now,
-            model_name="test-model",
-            prompt_version="research-v1",
-        )
+        return "# Test Security\n\nBalanced."
 
 
 @asynccontextmanager
@@ -128,6 +110,7 @@ def test_create_list_detail_and_resume_event_stream(tmp_path) -> None:
             time.sleep(0.02)
 
         assert detail.json()["status"] == "COMPLETE"
+        assert detail.json()["result"]["report_markdown"].startswith("# Test Security")
         assert client.get("/api/research/runs").json()[0]["id"] == body["run_id"]
 
         events = client.get(
@@ -135,13 +118,13 @@ def test_create_list_detail_and_resume_event_stream(tmp_path) -> None:
             headers={"Last-Event-ID": "2"},
         )
         assert events.status_code == 200
-        assert "id: 3" in events.text
+        assert "event: TOOL_STARTED" in events.text
         assert "event: AGENT_COMPLETED" in events.text
         assert "id: 1" not in events.text
 
         exhausted = client.get(
             body["event_url"],
-            headers={"Last-Event-ID": "4"},
+            headers={"Last-Event-ID": "8"},
         )
         assert exhausted.status_code == 200
         assert exhausted.text == ""

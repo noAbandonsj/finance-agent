@@ -91,15 +91,7 @@ def _result_record(row: AnalysisResultRow) -> AnalysisResultRecord:
     return AnalysisResultRecord(
         id=row.id,
         run_id=row.run_id,
-        market_view=row.market_view,
-        horizon=row.horizon,
-        confidence=row.confidence,
-        summary=row.summary,
-        supporting_evidence=row.supporting_evidence_json,
-        opposing_evidence=row.opposing_evidence_json,
-        risks=row.risks_json,
-        invalidation_conditions=row.invalidation_conditions_json,
-        full_result=row.full_result_json,
+        report_markdown=row.report_markdown,
         created_at=_as_utc(row.created_at),
     )
 
@@ -245,21 +237,19 @@ class AnalysisRepository:
             session.add(
                 AnalysisResultRow(
                     run_id=run_id,
-                    market_view=result.market_view,
-                    horizon=result.horizon,
-                    confidence=result.confidence,
-                    summary=result.summary,
-                    supporting_evidence_json=result.supporting_evidence,
-                    opposing_evidence_json=result.opposing_evidence,
-                    risks_json=result.risks,
-                    invalidation_conditions_json=result.invalidation_conditions,
-                    full_result_json=result.full_result,
+                    report_markdown=result.report_markdown,
                     created_at=now,
+                )
+            )
+            data_cutoff = session.scalar(
+                select(func.max(ToolCallRecordRow.market_time)).where(
+                    ToolCallRecordRow.run_id == run_id,
+                    ToolCallRecordRow.success.is_(True),
                 )
             )
             run.status = "COMPLETE"
             run.finished_at = now
-            run.data_cutoff = _as_utc(result.data_cutoff)
+            run.data_cutoff = _optional_utc(data_cutoff)
             run.error_code = None
             run.error_message = None
             session.flush()
@@ -303,23 +293,13 @@ class AnalysisRepository:
 
     def list_runs(self, limit: int, offset: int) -> list[AnalysisRunSummary]:
         with self._database.session() as session, session.begin():
-            rows = session.execute(
-                select(AnalysisRunRow, AnalysisResultRow)
-                .outerjoin(AnalysisResultRow, AnalysisResultRow.run_id == AnalysisRunRow.id)
+            rows = session.scalars(
+                select(AnalysisRunRow)
                 .order_by(AnalysisRunRow.started_at.desc(), AnalysisRunRow.id.desc())
                 .limit(limit)
                 .offset(offset)
             ).all()
-            records = [
-                AnalysisRunSummary(
-                    **_run_record(run).model_dump(),
-                    market_view=result.market_view if result is not None else None,
-                    horizon=result.horizon if result is not None else None,
-                    confidence=result.confidence if result is not None else None,
-                    summary=result.summary if result is not None else None,
-                )
-                for run, result in rows
-            ]
+            records = [AnalysisRunSummary(**_run_record(run).model_dump()) for run in rows]
         return records
 
 
